@@ -1,0 +1,2 @@
+-r requirements.txt
+TikTokLive>=6.6.5,<7

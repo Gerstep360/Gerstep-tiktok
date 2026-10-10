@@ -1,0 +1,28 @@
+# Managed: Gerstep Interactive
+[Unit]
+Description=Gerstep Interactive web gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gerstep-interactive
+Group=gerstep-interactive
+WorkingDirectory=/opt/gerstep-interactive
+EnvironmentFile=/etc/gerstep-interactive.env
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/gerstep-interactive/.venv/bin/python -m vps.backend.server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/gerstep-interactive/data
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
