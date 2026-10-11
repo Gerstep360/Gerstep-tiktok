@@ -4,7 +4,7 @@ Comprobaciones realizadas en desarrollo (Windows, Python 3.12):
 
 | Comprobación | Resultado |
 | --- | --- |
-| Suite propia `python -m unittest discover -s tests -v` | 37 pruebas pasan, incluidas regresiones del 404, diagnóstico HTTPS, mensajes del menú y actualización Git. |
+| Suite propia `python -m unittest discover -s tests -v` | 38 pruebas pasan, incluidas regresiones del 404, diagnóstico HTTPS, menú, actualización Git y descarga protegida de conexión. |
 | ZIP extraído fuera del proyecto, entorno nuevo con solo requisitos aiohttp | Las mismas 25 pruebas pasan. Sin Gerstep LIVE, TikTokLive ni pygame instalados. |
 | Login con hash de contraseña y claves independientes | HTTP real: contraseña válida entra; la clave API no se acepta como contraseña humana. |
 | Envío → aprobación → actualización WebSocket | Servidor real local; también se sirve React compilado. |
@@ -15,9 +15,11 @@ Comprobaciones realizadas en desarrollo (Windows, Python 3.12):
 | Parser/configuración Nginx | Mantiene otros bloques; inserción idempotente; HTTP ACME atraviesa redirecciones. |
 | Nginx 1.30.5 para Windows real en loopback | `nginx -t`, TLS IP sin SNI, dominio con SNI, caché de certificados, HTTP y WebSocket pasan. Certificados de laboratorio. |
 | Regresión 404 con Nginx real | Un `return 404` del servidor bloquea el proxy anterior. Con la corrección, salud HTTP, React y flujo pregunta → aprobación por WSS pasan. También se prueban `return 301` e `if { return 404; }`; las rutas ajenas mantienen sus estados originales. |
-| URL pública, consulta de solo lectura (2026-10-10) | `/Gerstep/api/health` devuelve 404, servidor `nginx/1.24.0 (Ubuntu)`. No se inspeccionó su configuración privada ni se desplegó la corrección por SSH. |
-| React | Compilación de producción y cuatro pruebas SSR pasan. JS 252,41 kB (78,08 gzip), CSS 22,36 kB (5,67 gzip). |
+| URL pública, consulta de solo lectura (2026-10-10) | La consulta inicial devolvió 404; la más reciente devuelve HTTP 200 y `{"ok":true}` con validación TLS. No se accedió al panel privado ni se desplegó por SSH. |
+| React | Compilación de producción y cinco pruebas SSR pasan. JS 253,73 kB (78,49 gzip), CSS 22,88 kB (5,76 gzip). |
 | Arranque React y efectos de encuesta en Edge headless real | Sin encuesta/voto inicial, actualización por WebSocket, voto persistido al recargar, cambio y cierre de encuesta pasan sin excepciones JavaScript. Sin desbordamiento horizontal en 1280×800 y 390×844. Compilación corregida: JS 252,42 kB (78,09 gzip). |
+| Conexión del PC, panel privado | Navegador real local: login con contraseña, Control, descarga autenticada con cabeceras no-store y actualizaciones de presencia por WebSocket pasan. Panel sin desbordamiento en 1280×800 y 390×844; capturas de Control revisadas en ambos tamaños. |
+| Protección de claves | La ruta de descarga devuelve 401 sin administrador y con una clave de puente usada como clave administrativa. Las claves no aparecen en el estado público. Prueba HTTP real local, claves ficticias de laboratorio. |
 | Actualización forzada Git | Repositorios temporales reales: fetch/reset trae código nuevo y sobrescribe ediciones versionadas; conserva archivos privados no versionados y datos del servicio. Fallo del fetch conserva el código local; rechaza el repositorio padre y la carpeta de datos runtime. Reinicio del menú probado sin bucles ni instalación con módulos viejos. |
 | `bash -n install` | Sintaxis válida. |
 | Paquete | ZIP sin datos, secretos, `.git`, `node_modules` ni código del escritorio; permiso Unix 0755 para `install`. |

@@ -4,6 +4,7 @@ Uses a fresh headless profile, loopback backend and in-memory database. No VPS,
 TikTok, installed service, personal browser profile or physical device is used.
 """
 import asyncio
+import base64
 import contextlib
 import json
 import os
@@ -18,6 +19,7 @@ from aiohttp import ClientSession
 from aiohttp.test_utils import TestServer
 from backend.config import Config
 from backend.server import HUB, create_app
+from backend.passwords import hash_password
 
 
 def free_port():
@@ -66,7 +68,8 @@ class DevTools:
 async def probe():
     binary = os.environ['BROWSER_BINARY']
     port, debug = free_port(), free_port()
-    config = Config(f'http://127.0.0.1:{port}', 's'*48, 'b'*48, 'a'*48, database=':memory:', development=True)
+    config = Config(f'http://127.0.0.1:{port}', 's'*48, 'b'*48, 'a'*48, database=':memory:', development=True,
+                    admin_password_hash=hash_password('browser-panel-password'))
     server = TestServer(create_app(config), port=port)
     await server.start_server()
     try:
@@ -116,6 +119,27 @@ async def probe():
                                 assert await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Horizontal overflow'
                             await hub.admin('poll_close', {})
                             await browser.wait("document.querySelector('.main-content .poll-panel')?.textContent.includes('Encuesta cerrada')")
+                            await browser.call('Page.navigate', url=config.origin + '/Gerstep/login')
+                            await browser.wait("document.querySelector('#admin-key') !== null")
+                            await browser.evaluate("Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(document.querySelector('#admin-key'),'browser-panel-password'); document.querySelector('#admin-key').dispatchEvent(new Event('input',{bubbles:true}))")
+                            await browser.evaluate("document.querySelector('.login-box button').click()")
+                            await browser.wait("document.querySelector('.admin-nav') !== null")
+                            await browser.evaluate("[...document.querySelectorAll('.admin-nav button')].find(b=>b.textContent==='Control').click()")
+                            await browser.wait("document.querySelector('.studio-connection')?.textContent.includes('PC sin conectar')")
+                            await browser.wait("document.querySelector('.studio-connection a')?.getAttribute('href')==='/Gerstep/api/admin/connection'")
+                            assert await browser.evaluate("fetch('/Gerstep/api/admin/connection').then(async r=>({ok:r.ok,attachment:r.headers.get('Content-Disposition')?.includes('gerstep-pc-connection.json'),private:r.headers.get('Cache-Control')==='no-store',valid:(await r.json()).url.endsWith('/Gerstep')})).then(v=>v.ok&&v.attachment&&v.private&&v.valid)"), 'Private connection download failed'
+                            # Show a real bridge presence rather than conflating the VPS intake with the PC.
+                            async with client.ws_connect(config.origin + '/Gerstep/api/bridge/ws', headers={'Authorization':'Bearer '+config.bridge_token}) as bridge:
+                                await bridge.send_json({'type':'events','events':[{'kind':'state','state':{'connected':True,'music_enabled':False}}]})
+                                await browser.wait("document.querySelector('.connection-stages')?.textContent.includes('TikTok conectado en el PC')")
+                                for width, height in ((1280,800),(390,844)):
+                                    await browser.call('Emulation.setDeviceMetricsOverride', width=width,height=height,deviceScaleFactor=1,mobile=width<600)
+                                    assert await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Admin horizontal overflow'
+                                    if os.environ.get('GERSTEP_BROWSER_ARTIFACTS'):
+                                        directory = Path(os.environ['GERSTEP_BROWSER_ARTIFACTS']).resolve()
+                                        directory.mkdir(parents=True,exist_ok=True)
+                                        capture = await browser.call('Page.captureScreenshot',format='png',captureBeyondViewport=False)
+                                        (directory / f'admin-control-{width}.png').write_bytes(base64.b64decode(capture['data']))
                             assert not browser.errors, browser.errors
                             await browser.call('Browser.close')
                         finally:
@@ -126,6 +150,7 @@ async def probe():
                 if process.poll() is None: process.terminate(); process.wait(timeout=10)
         return {'initial_empty_state': True, 'websocket_poll_update': True, 'vote_and_reload': True,
                 'new_poll_clears_previous_choice': True, 'poll_close': True, 'javascript_errors': 0,
+                'private_login_and_connection_export': True, 'private_bridge_status_updates': True,
                 'viewports_without_horizontal_overflow': ['1280x800', '390x844'], 'environment': 'local headless Chromium'}
     finally:
         await server.close()

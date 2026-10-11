@@ -128,11 +128,19 @@ Administración: `https://167.86.106.105/Gerstep/login`, sin enlace público.
 La contraseña del menú queda como hash PBKDF2, separada de las claves del programa.
 Los secretos están en `/etc/gerstep-interactive.env`, con permisos root 0600.
 
-Opción **5 · Exportar conexión** crea `/root/gerstep-pc-connection.json` (0600)
-con `url`, `bridge_token` y `admin_api_token`. Transferí ese archivo privadamente
-y pegá sus valores en los campos URL, token del programa y clave administrativa
-del panel Interactive del PC. No publiques ese archivo. La contraseña humana
-del login no es la clave API administrativa del programa.
+Desde **login → Control → Descargar conexión para el PC** obtenés
+`gerstep-pc-connection.json`. La descarga exige autenticación administrativa,
+está limitada a tres por minuto y no se guarda en caché. La página pública
+y la clave del puente no dan acceso al archivo.
+En el programa Windows elegí **Interactive → Importar conexión VPS**:
+carga la URL y ambas claves y conecta el puente sin copiarlas a mano.
+Las claves quedan solamente en la sesión del PC. El panel Control muestra
+por separado web activa, PC conectado y TikTok conectado en el PC.
+
+También podés usar **5 · Exportar conexión** del instalador: crea
+`/root/gerstep-pc-connection.json` (0600) con los mismos campos `url`,
+`bridge_token` y `admin_api_token`. Transferilo privadamente e importalo.
+No publiques ese archivo. La contraseña del login es independiente de las claves API.
 
 El PC abre el WebSocket saliente y conserva su TTS, música, director y colas.
 La web sigue funcionando si el PC se desconecta; el bot y la reproducción musical

@@ -407,6 +407,28 @@ class FreshnessTests(unittest.TestCase):
 
 
 class StandaloneFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_connection_export_requires_admin_and_is_not_cached(self):
+        conf = config(admin_password_hash=hash_password('example-panel-password'))
+        client = TestClient(TestServer(create_app(conf)), cookie_jar=CookieJar(unsafe=True))
+        await client.start_server()
+        try:
+            response = await client.get('/Gerstep/api/admin/connection')
+            self.assertEqual(response.status, 401)
+            response = await client.get('/Gerstep/api/admin/connection', headers={'X-Gerstep-Admin': conf.bridge_token})
+            self.assertEqual(response.status, 401)
+            response = await client.post('/Gerstep/api/admin/login', json={'token': 'example-panel-password'}, headers={'Origin': conf.origin})
+            self.assertEqual(response.status, 200)
+            response = await client.get('/Gerstep/api/admin/connection')
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            self.assertIn('attachment', response.headers['Content-Disposition'])
+            self.assertEqual(await response.json(), {'url': conf.origin + '/Gerstep', 'bridge_token': conf.bridge_token, 'admin_api_token': conf.admin_token})
+            response = await client.get('/Gerstep/api/state')
+            public = await response.text()
+            self.assertNotIn(conf.bridge_token, public)
+            self.assertNotIn(conf.admin_token, public)
+        finally: await client.close()
+
     async def test_http_websocket_moderation_and_hashed_login(self):
         conf = config(admin_password_hash=hash_password('example-panel-password'))
         client = TestClient(TestServer(create_app(conf)), cookie_jar=CookieJar(unsafe=True))

@@ -9,7 +9,18 @@ after(()=>server.close());
 const {Viewer}=await server.ssrLoadModule('/src/viewer.jsx');
 const {Admin}=await server.ssrLoadModule('/src/admin.jsx');
 const {Question,Poll,Levels,Wheel}=await server.ssrLoadModule('/src/components.jsx');
+const {StudioConnection}=await server.ssrLoadModule('/src/connection.jsx');
 const render=(Component,props={})=>renderToStaticMarkup(React.createElement(Component,props));
+
+test('private connection help distinguishes VPS intake from PC audio',()=>{
+  const disconnected=render(StudioConnection,{online:false,live:{connected:true}});
+  assert.ok(disconnected.includes('PC sin conectar'));
+  assert.ok(disconnected.includes('TikTok pendiente en el PC'));
+  assert.ok(disconnected.includes('api/admin/connection'));
+  const connected=render(StudioConnection,{online:true,live:{connected:true}});
+  assert.ok(connected.includes('TikTok conectado en el PC'));
+  assert.ok(connected.includes('Usar bot'));
+});
 
 test('public surface has no admin link or mandatory nickname entry',()=>{
   const html=render(Viewer);

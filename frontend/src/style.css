@@ -10,3 +10,9 @@
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .level-rank{display:block;color:var(--muted);font-size:11px;margin-top:4px;font-weight:400}
+.studio-connection{padding:22px;margin-bottom:24px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
+.studio-connection h2{font-size:21px;margin:10px 0 18px}
+.studio-connection p{font-size:13px;color:var(--muted);max-width:640px}
+.connection-stages{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.connection-stages span{padding:8px 11px;border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--muted)}
+.connection-stages .ready{color:var(--cyan);border-color:#25f4ee40}

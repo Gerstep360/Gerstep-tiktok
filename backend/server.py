@@ -269,6 +269,16 @@ async def admin_state(request):
     return web.json_response(request.app[HUB].state('admin'))
 
 
+async def connection_export(request):
+    actor(request, 'admin')
+    rate(request, 'connection-export', limit=3, period=60)
+    conf = request.app[HUB].config
+    return web.json_response({'url': conf.origin + conf.prefix, 'bridge_token': conf.bridge_token,
+                             'admin_api_token': conf.admin_token},
+                            headers={'Content-Disposition': 'attachment; filename="gerstep-pc-connection.json"',
+                                     'Cache-Control': 'no-store', 'Pragma': 'no-cache'})
+
+
 async def logout(request):
     session = actor(request, 'admin')
     hub = request.app[HUB]
@@ -438,6 +448,7 @@ def create_app(config):
                     web.get(prefix+'/api/admin/state', admin_state), web.post(prefix+'/api/admin/action', admin_action), web.post(prefix+'/api/admin/logout', logout),
                     web.get(prefix+'/api/admin/markers', markers), web.post(prefix+'/api/bridge/events', bridge_events),
                     web.get(prefix+'/api/admin/votes',votes_export),
+                    web.get(prefix+'/api/admin/connection',connection_export),
                     web.get(prefix+'/api/{role}/ws', websocket), web.get(prefix+'/api/health', health),
                     web.get(prefix, frontend), web.get(prefix+'/', frontend), web.get(prefix+'/admin', frontend), web.get(prefix+'/login', frontend), web.get(prefix+'/overlay', frontend)])
     assets = config.frontend / 'assets'
