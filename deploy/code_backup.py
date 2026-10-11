@@ -8,7 +8,7 @@ class CodeBackup:
         self.app, self.backup, self.saved = Path(app), Path(backup), []
 
     def save(self):
-        for name in ('backend', 'deploy', 'frontend'):
+        for name in ('backend', 'deploy', 'frontend', 'ai_common'):
             if (self.app / name).is_dir():
                 shutil.copytree(self.app / name, self.backup / name,
                     ignore=shutil.ignore_patterns('node_modules', '__pycache__', '.env', '.git', 'data'))

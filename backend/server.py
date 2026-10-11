@@ -32,7 +32,7 @@ class Peer:
 
 
 class Hub:
-    def __init__(self, config):
+    def __init__(self, config, ai_preview=None):
         self.config = config
         self.security = Security(config)
         self.db = Database(config.database)
@@ -46,6 +46,10 @@ class Hub:
         self.actions = {}
         self.latencies = []
         self.password_workers = asyncio.Semaphore(2)
+        from .ai import create_preview
+        self.ai_preview = ai_preview or create_preview()
+        from .ai_actions import AIEffects
+        self.ai_effects = AIEffects()
 
     async def start(self):
         await self.db.start()
@@ -59,6 +63,7 @@ class Hub:
             self.tasks.append(asyncio.create_task(collect(self, os.environ.get('GERSTEP_TIKTOK_USERNAME','gerstep_official')), name='vps-tiktok-intake'))
 
     async def stop(self):
+        await self.ai_preview.close()
         for task in self.tasks: task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
         await asyncio.gather(*(peer.socket.close(code=1001, message=b'Server stopping') for peer in list(self.peers)), return_exceptions=True)
@@ -139,7 +144,7 @@ class Hub:
             row = result['request']
             task = {'type': 'approved', 'action_id': secrets.token_hex(12), 'request_id': row['id'],
                     'kind': row['kind'], 'text': row['text'], 'nickname': row['nickname'], 'owner': row['owner'],
-                    'response': row['response'], 'expires': time.time() + 10, 'created': time.time()}
+                    'response': row['response'], 'expires': time.time() + (30 if row['kind']=='question' and not row['response'] else 10), 'created': time.time()}
             self.actions[task['action_id']] = task
             self.bridge.queue.put_nowait(task)
         return {key: value for key, value in result.items() if key != 'request'}
@@ -177,7 +182,8 @@ def rate(request, action, *, limit=1, period=15):
 async def security_middleware(request, handler):
     hub = request.app[HUB]
     if request.method not in {'GET', 'POST'}: raise web.HTTPMethodNotAllowed(request.method, ['GET', 'POST'])
-    if request.method == 'POST' and not request.path.endswith('/api/bridge/events'):
+    native_bridge_paths = {hub.config.prefix + '/api/bridge/events', hub.config.prefix + '/api/bridge/ai/actions'}
+    if request.method == 'POST' and request.path not in native_bridge_paths:
         origin = request.headers.get('Origin')
         # Native administration requires a separate admin key, never the bridge key.
         native_admin = request.path.endswith('/api/admin/action') and hub.security.valid_key(request.headers.get('X-Gerstep-Admin', ''), hub.config.admin_token)
@@ -269,6 +275,23 @@ async def admin_state(request):
     return web.json_response(request.app[HUB].state('admin'))
 
 
+async def admin_ai(request):
+    session = actor(request, 'admin')
+    preview = request.app[HUB].ai_preview
+    if request.method == 'GET':
+        return web.json_response(preview.snapshot())
+    values = await body(request)
+    if values.get('action') == 'ack':
+        return web.json_response({'acknowledged':preview.acknowledge(session['id'],values.get('id',''))})
+    if values == {'action':'clear'}:
+        if preview.active: raise ValueError('Esperá a que termine la respuesta.')
+        preview.memory.forget(session['id'])
+        return web.json_response({'cleared':True})
+    rate(request, 'admin-ai-test', limit=6, period=60)
+    if set(values) != {'text'}: raise ValueError('Solo se permite texto de prueba.')
+    return web.json_response(await preview.ask(values['text'],session['id']))
+
+
 async def connection_export(request):
     actor(request, 'admin')
     rate(request, 'connection-export', limit=3, period=60)
@@ -328,6 +351,8 @@ async def bridge_events(request):
     values = await body(request)
     events = values.get('events')
     if not isinstance(events, list) or len(events) > 50 or any(not isinstance(e, dict) for e in events): raise ValueError('Lote inválido.')
+    from .ai_actions import update_catalog
+    update_catalog(request.app[HUB], events)
     return web.json_response(await request.app[HUB].call(request.app[HUB].domain.ingest, events))
 
 
@@ -366,6 +391,8 @@ async def websocket(request):
     async def sender():
         while True:
             message = await peer.queue.get()
+            if message.get('type') == 'ai_effect' and message.get('expires', 0) <= time.time():
+                continue
             if message.get('type') == 'snapshot':
                 data = message['state']
                 patch = {key:value for key,value in data.items() if peer.previous.get(key) != value}
@@ -394,6 +421,8 @@ async def websocket(request):
                 if payload.get('type') == 'events':
                     events = payload.get('events')
                     if not isinstance(events, list) or len(events)>50 or any(not isinstance(e,dict) for e in events): raise ValueError()
+                    from .ai_actions import update_catalog
+                    update_catalog(hub, events)
                     await hub.call(hub.domain.ingest, events)
                 elif payload.get('type') == 'ack':
                     action = hub.actions.get(payload.get('action_id'))
@@ -412,15 +441,22 @@ async def websocket(request):
                 await ws.send_json({'type':'error','message':'Evento inválido.'})
     finally:
         task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        # Remove identity before the first await: an HTTP-handler cancellation
+        # can interrupt cleanup while awaiting the writer, leaving a dead bridge.
         hub.peers.discard(peer)
-        if hub.bridge is peer:
+        was_bridge = hub.bridge is peer
+        abandoned = list(hub.actions.values()) if was_bridge else []
+        if was_bridge:
             hub.bridge = None
-            await hub.db.call(lambda _db: hub.domain.live.update(connected=False))
             hub.source_changed.set()
-            for action in list(hub.actions.values()):
+        hub.dirty.set()
+        await asyncio.gather(task, return_exceptions=True)
+        if was_bridge:
+            # A newly connected PC may already have sent its live state.
+            await hub.db.call(lambda _db: hub.domain.live.update(connected=False) if hub.bridge is None else None)
+            for action in abandoned:
+                hub.actions.pop(action['action_id'], None)
                 await hub.call(hub.domain.moderate, 'ack', {'id': action['request_id'], 'status':'error'})
-            hub.actions.clear()
         hub.dirty.set()
     return ws
 
@@ -438,8 +474,8 @@ async def health(request):
     return web.json_response({'ok':True})
 
 
-def create_app(config):
-    hub = Hub(config)
+def create_app(config, *, ai_preview=None):
+    hub = Hub(config, ai_preview)
     app = web.Application(middlewares=[security_middleware], client_max_size=65536)
     app[HUB] = hub
     prefix = config.prefix
@@ -449,8 +485,11 @@ def create_app(config):
                     web.get(prefix+'/api/admin/markers', markers), web.post(prefix+'/api/bridge/events', bridge_events),
                     web.get(prefix+'/api/admin/votes',votes_export),
                     web.get(prefix+'/api/admin/connection',connection_export),
+                    web.get(prefix+'/api/admin/ai',admin_ai), web.post(prefix+'/api/admin/ai',admin_ai),
                     web.get(prefix+'/api/{role}/ws', websocket), web.get(prefix+'/api/health', health),
                     web.get(prefix, frontend), web.get(prefix+'/', frontend), web.get(prefix+'/admin', frontend), web.get(prefix+'/login', frontend), web.get(prefix+'/overlay', frontend)])
+    from .ai_actions import register as register_ai_actions
+    register_ai_actions(app, prefix)
     assets = config.frontend / 'assets'
     if assets.exists(): app.router.add_static(prefix+'/assets/', assets, follow_symlinks=False)
     async def lifecycle(_app):

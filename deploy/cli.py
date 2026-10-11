@@ -47,7 +47,7 @@ def origin(value):
 def copy_application(source, target):
     if Path(source).resolve() == Path(target).resolve(): return
     target.mkdir(parents=True, exist_ok=True)
-    for name in ('backend', 'deploy', 'frontend'):
+    for name in ('backend', 'deploy', 'frontend', 'ai_common'):
         shutil.copytree(source / name, target / name, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns('node_modules', '__pycache__', '.git', '.env', 'data'))
         # Uploaded directories can have private modes; the unprivileged service needs read access.
@@ -257,7 +257,7 @@ def main():
     after_sync = os.environ.pop('GERSTEP_INSTALL_AFTER_SYNC', '') == '1'
     while True:
         ui.banner()
-        ui.say('  1  Instalar / actualizar\n  2  Estado y diagnóstico\n  3  Reiniciar Gerstep\n  4  Cambiar contraseña del administrador\n  5  Exportar conexión para el PC\n  6  Activar / desactivar lector de TikTok\n  7  Ver últimas incidencias\n  8  Copia de seguridad de los datos\n  0  Salir')
+        ui.say('  1  Instalar / actualizar\n  2  Estado y diagnóstico\n  3  Reiniciar Gerstep\n  4  Cambiar contraseña del administrador\n  5  Exportar conexión para el PC\n  6  Activar / desactivar lector de TikTok\n  7  Ver últimas incidencias\n  8  Copia de seguridad de los datos\n  9  Configurar NVIDIA (IA privada)\n  0  Salir')
         try:
             synced = after_sync
             choice = '1' if synced else ui.ask('Opción', '1')
@@ -303,6 +303,22 @@ def main():
                 runner.run(['systemctl', 'restart', SERVICE])
             elif choice == '7': ui.say(runner.capture(['journalctl', '-u', SERVICE, '--no-pager', '-n', '40']))
             elif choice == '8': backup(ui)
+            elif choice == '9':
+                import getpass
+                values = read_env(ENV)
+                if not values: raise ValueError('Instalá Gerstep primero.')
+                ui.say('La clave se guarda en el entorno privado del servicio. Nunca se envía al navegador.')
+                secret = getpass.getpass('API key NVIDIA (vacío conserva la actual): ').strip()
+                if secret:
+                    if len(secret)>512 or not secret.isascii() or any(c.isspace() for c in secret):
+                        raise ValueError('Formato de clave inválido.')
+                    values['NVIDIA_API_KEY'] = secret
+                values['GERSTEP_AI_ENABLED'] = 'true' if ui.yes('Habilitar pruebas IA privadas',True) else 'false'
+                values.setdefault('GERSTEP_AI_REQUESTS_PER_MINUTE','6')
+                values.setdefault('GERSTEP_AI_RESERVED_REQUESTS','0')
+                write_env(ENV,values)
+                runner.run(['systemctl','restart',SERVICE])
+                ui.say('IA privada configurada. Abrí la pestaña IA del administrador.','32')
             else: ui.say('Elegí una opción del menú.', '33')
         except (KeyboardInterrupt, EOFError):
             ui.say('\nOperación cancelada.'); return

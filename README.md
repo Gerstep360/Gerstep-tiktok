@@ -146,6 +146,36 @@ El PC abre el WebSocket saliente y conserva su TTS, música, director y colas.
 La web sigue funcionando si el PC se desconecta; el bot y la reproducción musical
 requieren el programa conectado. No se reenvían voces obsoletas al reconectar.
 
+## IA privada y sonidos del PC
+
+La opción **9 · Configurar NVIDIA (IA privada)** de `./install` solicita la clave
+sin mostrarla, la guarda en `/etc/gerstep-interactive.env` con permisos root
+**0600** y reinicia únicamente Gerstep. Dejar la clave vacía conserva la actual.
+Las pruebas del VPS tienen inicialmente un límite operativo de seis solicitudes
+por minuto; ese valor no representa una cuota garantizada por NVIDIA.
+
+Entrá por `/Gerstep/login` y abrí la pestaña **IA** del administrador. Su chat
+usa `GET`/`POST /Gerstep/api/admin/ai`, exige autenticación administrativa y no
+está disponible para visitantes, sesiones de espectadores ni la clave del puente.
+Los comandos locales no consumen NVIDIA. El chat de pruebas no activa sonidos
+automáticamente. `ai_common` contiene cliente, cuotas, enrutamiento y contexto
+compartidos, sin depender de TikTok, Tkinter, TTS ni módulos del escritorio.
+
+Los efectos autorizados se transportan por dos endpoints privados:
+
+- `POST /Gerstep/api/bridge/ai/actions`: clave Bearer exclusiva del programa.
+- `POST /Gerstep/api/admin/ai/effect`: acción explícita del administrador, con
+  sesión administrativa y origen web válido.
+
+Sólo aceptan los IDs `laugh`, `baby_laugh`, `shock`, `fail`, `high_fail` y `meme`
+que el PC anuncie como disponibles y habilitados; nunca rutas, scripts ni texto
+generado como instrucciones ejecutables. El POST regresa por el WebSocket
+existente como `ai_effect`, correlacionado mediante `action_id` y `turn_id`
+opcional. El PC coordina el sonido con la voz de ese turno. Hay deduplicación,
+cooldown compartido, cola limitada y cinco segundos de vigencia de transporte.
+Si el PC está desconectado, en emergencia o sin efectos habilitados, se rechaza
+la acción: no se almacena para reproducirla en otra sesión.
+
 ## TikTok opcional
 
 El menú instala TikTokLive solamente si activás el receptor. Es un adaptador
@@ -205,7 +235,11 @@ El paquete se genera en `release/gerstep-interactive.zip`, con `install` en su
 raíz. Desarrollo local: completar `.env.example` y cargar sus valores como
 variables de entorno; ejecutar `python -m backend.server`. Para HTTP local usar
 `GERSTEP_DEVELOPMENT=1` y `GERSTEP_ORIGIN=http://127.0.0.1:9081`.
-El backend no carga ni ejecuta archivos `.env` automáticamente.
+La configuración principal (`backend.config.Config`) lee sólo variables del
+entorno del proceso. Como excepción, `ai_common.config.AIConfig` puede leer el
+`.env` local para la IA mediante un parser literal: no ejecuta ni interpola su
+contenido, y las variables del proceso tienen prioridad. En producción systemd
+carga el archivo privado `/etc/gerstep-interactive.env`.
 
 Pruebas locales verifican HTTP/WebSocket, login, moderación, aislamiento,
 preservación de datos, transacciones y configuraciones Nginx representativas.

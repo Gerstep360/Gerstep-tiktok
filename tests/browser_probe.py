@@ -140,6 +140,17 @@ async def probe():
                                         directory.mkdir(parents=True,exist_ok=True)
                                         capture = await browser.call('Page.captureScreenshot',format='png',captureBeyondViewport=False)
                                         (directory / f'admin-control-{width}.png').write_bytes(base64.b64decode(capture['data']))
+                            await browser.evaluate("[...document.querySelectorAll('.admin-nav button')].find(b=>b.textContent==='IA privada').click()")
+                            await browser.wait("document.querySelector('#ai-text') !== null")
+                            await browser.evaluate("Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(document.querySelector('#ai-text'),'!help'); document.querySelector('#ai-text').dispatchEvent(new Event('input',{bubbles:true}))")
+                            await browser.evaluate("document.querySelector('.ai-compose').requestSubmit()")
+                            await browser.wait("document.querySelector('.ai-conversation')?.textContent.includes('Respuesta local')")
+                            for width,height in ((1280,800),(390,844)):
+                                await browser.call('Emulation.setDeviceMetricsOverride',width=width,height=height,deviceScaleFactor=1,mobile=width<600)
+                                assert await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'AI horizontal overflow'
+                                if os.environ.get('GERSTEP_BROWSER_ARTIFACTS'):
+                                    capture=await browser.call('Page.captureScreenshot',format='png',captureBeyondViewport=False)
+                                    (Path(os.environ['GERSTEP_BROWSER_ARTIFACTS']) / f'admin-ai-{width}.png').write_bytes(base64.b64decode(capture['data']))
                             assert not browser.errors, browser.errors
                             await browser.call('Browser.close')
                         finally:
@@ -151,6 +162,7 @@ async def probe():
         return {'initial_empty_state': True, 'websocket_poll_update': True, 'vote_and_reload': True,
                 'new_poll_clears_previous_choice': True, 'poll_close': True, 'javascript_errors': 0,
                 'private_login_and_connection_export': True, 'private_bridge_status_updates': True,
+                'private_ai_local_chat': True,
                 'viewports_without_horizontal_overflow': ['1280x800', '390x844'], 'environment': 'local headless Chromium'}
     finally:
         await server.close()

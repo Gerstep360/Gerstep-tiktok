@@ -230,7 +230,7 @@ class DeploymentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source, target = root / 'source', root / 'target'
-            for name in ('backend', 'deploy', 'frontend', 'gerstep_live'):
+            for name in ('backend', 'deploy', 'frontend', 'ai_common', 'gerstep_live'):
                 (source / name).mkdir(parents=True)
                 (source / name / 'sample.py').write_text('sample')
             for name in ('install', 'README.md', '.env.example'): (source / name).write_text('sample')
@@ -240,6 +240,7 @@ class DeploymentTests(unittest.TestCase):
             (target / 'data/interactive.sqlite3').write_text('keep')
             copy_application(source, target)
             self.assertFalse((target / 'gerstep_live').exists())
+            self.assertTrue((target / 'ai_common/sample.py').is_file())
             self.assertFalse((target / 'frontend/node_modules').exists())
             self.assertEqual((target / 'data/interactive.sqlite3').read_text(), 'keep')
 
