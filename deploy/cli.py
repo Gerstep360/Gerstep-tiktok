@@ -21,6 +21,7 @@ from deploy.system import MANAGED, Runner, Transaction, atomic_write, free_port,
 from deploy import nginx, tls
 from deploy.frontend import ensure_frontend
 from deploy.code_backup import CodeBackup
+from deploy.repository import refresh as refresh_repository
 
 APP = Path('/opt/gerstep-interactive')
 ENV = Path('/etc/gerstep-interactive.env')
@@ -102,6 +103,7 @@ def public_health(base):
 
 def settings(ui, old):
     values = dict(old)
+    if (SOURCE / '.git').exists(): values['GERSTEP_SOURCE_REPO'] = str(SOURCE.resolve())
     values['GERSTEP_ORIGIN'] = origin(ui.ask('IP o dominio público', old.get('GERSTEP_ORIGIN', 'https://167.86.106.105')))
     if 'GERSTEP_PORT' not in values: values['GERSTEP_PORT'] = str(free_port())
     if not values['GERSTEP_PORT'].isdecimal() or not 1024 <= int(values['GERSTEP_PORT']) <= 65535:
@@ -252,13 +254,23 @@ def main():
     if sys.platform != 'linux' or os.geteuid() != 0: raise SystemExit('Ejecutá ./install en el VPS Linux; se solicitará sudo si hace falta.')
     if sys.version_info < (3, 10): raise SystemExit('Python 3.10+ requerido (Debian 12+, Ubuntu 22.04+ o equivalente).')
     runner = Runner('/var/log/gerstep-interactive/install-' + time.strftime('%Y%m%d-%H%M%S') + '.log')
+    after_sync = os.environ.pop('GERSTEP_INSTALL_AFTER_SYNC', '') == '1'
     while True:
         ui.banner()
         ui.say('  1  Instalar / actualizar\n  2  Estado y diagnóstico\n  3  Reiniciar Gerstep\n  4  Cambiar contraseña del administrador\n  5  Exportar conexión para el PC\n  6  Activar / desactivar lector de TikTok\n  7  Ver últimas incidencias\n  8  Copia de seguridad de los datos\n  0  Salir')
         try:
-            choice = ui.ask('Opción', '1')
+            synced = after_sync
+            choice = '1' if synced else ui.ask('Opción', '1')
+            after_sync = False
             if choice == '0': return
-            if choice == '1': install(ui, runner)
+            if choice == '1':
+                if not synced:
+                    repo = refresh_repository(SOURCE, APP, read_env(ENV), ui, runner)
+                    if repo:
+                        os.environ['GERSTEP_INSTALL_AFTER_SYNC'] = '1'
+                        os.execv(sys.executable, [sys.executable, str(repo / 'deploy/cli.py')])
+                        return
+                install(ui, runner)
             elif choice == '2':
                 code = runner.run(['systemctl', 'is-active', '--quiet', SERVICE], check=False)
                 ui.say('Gerstep: ' + ('activo' if code == 0 else 'inactivo'), '32' if code == 0 else '33')

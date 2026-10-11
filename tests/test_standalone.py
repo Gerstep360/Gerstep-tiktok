@@ -43,6 +43,30 @@ def config(**kwargs):
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_menu_restarts_with_downloaded_code_before_installing(self):
+        repo = Path('/test/standalone-source')
+        ui = SimpleNamespace(banner=lambda: None, say=lambda *args: None, ask=lambda *args: '1')
+        with patch.object(cli.sys, 'platform', 'linux'), patch.object(cli.os, 'geteuid', return_value=0, create=True), \
+                patch.object(cli, 'UI', return_value=ui), patch.object(cli, 'Runner'), \
+                patch.object(cli, 'read_env', return_value={}), patch.object(cli, 'refresh_repository', return_value=repo), \
+                patch.object(cli, 'install') as install, patch.object(cli.os, 'execv', side_effect=SystemExit) as execute, \
+                patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(SystemExit): cli.main()
+            execute.assert_called_once_with(sys.executable, [sys.executable, str(repo / 'deploy/cli.py')])
+            install.assert_not_called()
+            self.assertEqual(os.environ['GERSTEP_INSTALL_AFTER_SYNC'], '1')
+
+    def test_restarted_menu_installs_once_without_fetch_loop(self):
+        ui = SimpleNamespace(banner=lambda: None, say=lambda *args: None, ask=lambda *args: '0')
+        with patch.object(cli.sys, 'platform', 'linux'), patch.object(cli.os, 'geteuid', return_value=0, create=True), \
+                patch.object(cli, 'UI', return_value=ui), patch.object(cli, 'Runner'), \
+                patch.object(cli, 'refresh_repository') as refresh, patch.object(cli, 'install') as install, \
+                patch.dict(os.environ, {'GERSTEP_INSTALL_AFTER_SYNC': '1'}, clear=True):
+            cli.main()
+            install.assert_called_once()
+            refresh.assert_not_called()
+            self.assertNotIn('GERSTEP_INSTALL_AFTER_SYNC', os.environ)
+
     def test_public_health_reports_nginx_failure_and_does_not_accept_html(self):
         endpoint = 'https://example.org/Gerstep/api/health'
         for failure in (HTTPError(endpoint, 404, 'Not Found', {}, None), ValueError('HTML page')):

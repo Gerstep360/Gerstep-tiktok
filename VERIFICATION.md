@@ -4,7 +4,7 @@ Comprobaciones realizadas en desarrollo (Windows, Python 3.12):
 
 | Comprobación | Resultado |
 | --- | --- |
-| Suite propia `python -m unittest discover -s tests -v` | 30 pruebas pasan, incluidas regresiones del 404, diagnóstico HTTPS y mensajes del menú. |
+| Suite propia `python -m unittest discover -s tests -v` | 37 pruebas pasan, incluidas regresiones del 404, diagnóstico HTTPS, mensajes del menú y actualización Git. |
 | ZIP extraído fuera del proyecto, entorno nuevo con solo requisitos aiohttp | Las mismas 25 pruebas pasan. Sin Gerstep LIVE, TikTokLive ni pygame instalados. |
 | Login con hash de contraseña y claves independientes | HTTP real: contraseña válida entra; la clave API no se acepta como contraseña humana. |
 | Envío → aprobación → actualización WebSocket | Servidor real local; también se sirve React compilado. |
@@ -17,6 +17,8 @@ Comprobaciones realizadas en desarrollo (Windows, Python 3.12):
 | Regresión 404 con Nginx real | Un `return 404` del servidor bloquea el proxy anterior. Con la corrección, salud HTTP, React y flujo pregunta → aprobación por WSS pasan. También se prueban `return 301` e `if { return 404; }`; las rutas ajenas mantienen sus estados originales. |
 | URL pública, consulta de solo lectura (2026-10-10) | `/Gerstep/api/health` devuelve 404, servidor `nginx/1.24.0 (Ubuntu)`. No se inspeccionó su configuración privada ni se desplegó la corrección por SSH. |
 | React | Compilación de producción y cuatro pruebas SSR pasan. JS 252,41 kB (78,08 gzip), CSS 22,36 kB (5,67 gzip). |
+| Arranque React y efectos de encuesta en Edge headless real | Sin encuesta/voto inicial, actualización por WebSocket, voto persistido al recargar, cambio y cierre de encuesta pasan sin excepciones JavaScript. Sin desbordamiento horizontal en 1280×800 y 390×844. Compilación corregida: JS 252,42 kB (78,09 gzip). |
+| Actualización forzada Git | Repositorios temporales reales: fetch/reset trae código nuevo y sobrescribe ediciones versionadas; conserva archivos privados no versionados y datos del servicio. Fallo del fetch conserva el código local; rechaza el repositorio padre y la carpeta de datos runtime. Reinicio del menú probado sin bucles ni instalación con módulos viejos. |
 | `bash -n install` | Sintaxis válida. |
 | Paquete | ZIP sin datos, secretos, `.git`, `node_modules` ni código del escritorio; permiso Unix 0755 para `install`. |
 
@@ -31,5 +33,6 @@ Pendiente: instalación real en Linux/systemd, paquetes de su distribución,
 permisos de los workers/SELinux cuando corresponda, configuración concreta de
 Nginx, desafío ACME por Internet, renovación pública, conexión auténtica con
 TikTok y ejecución prolongada en ese hardware. No se afirma que el VPS esté
-desplegado. La revisión visual de la página en móvil/desktop también sigue
-pendiente; SSR no sustituye renderizado en un navegador.
+desplegado. La inspección visual manual de todas las pantallas sigue pendiente;
+el probe de navegador verifica ejecución, interacciones de encuestas y medidas
+del DOM, sin afirmar una revisión visual exhaustiva de todo el panel.

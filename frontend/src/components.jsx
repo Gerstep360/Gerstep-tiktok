@@ -44,7 +44,7 @@ export function Question({ item, canAct, onError }) {
 
 export function Poll({ poll, myVote, canAct, onError }) {
   const [choice, setChoice] = useState(null), [busy, setBusy] = useState(false);
-  useEffect(()=>setChoice(myVote?.poll_id===poll?.id?myVote.choice:null),[poll?.id,myVote?.poll_id,myVote?.choice]);
+  useEffect(()=>setChoice(poll?.id && myVote?.poll_id===poll.id ? myVote.choice : null),[poll?.id,myVote?.poll_id,myVote?.choice]);
   const vote = async number => {
     setBusy(true);
     try { await api('viewer/vote', {choice:number,poll_id:poll.id}); setChoice(number); }

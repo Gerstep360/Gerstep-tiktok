@@ -27,15 +27,24 @@ Luego muestra la configuración antes de aplicarla. Genera automáticamente las
 claves, elige un puerto libre y prepara paquetes, entorno Python, Nginx y systemd.
 La contraseña requiere **de 12 a 256 caracteres**; no aparece mientras la escribís.
 
-Para actualizar una copia ya clonada (también después de una instalación fallida):
+Si tu menú todavía es una versión antigua que no actualiza Git, recibí esta
+versión una vez con:
 
 ```bash
 cd ~/app/Gerstep-tiktok
-git pull --ff-only
+git fetch origin
+git reset --hard origin/main
 ./install
 ```
 
-Elegí la opción 1. Se conserva la configuración de una instalación anterior.
+Elegí la opción 1. El menú hace **`git fetch` y `git reset --hard` a `origin/main`**
+automáticamente y reinicia su proceso para instalar el código recién descargado.
+Esto sobrescribe las modificaciones locales versionadas del repositorio fuente.
+Si falla el fetch, no ejecuta el reset ni detiene Gerstep. No hace `git clean`.
+Se conserva la configuración de una instalación anterior.
+Después basta con ejecutar `./install` y elegir la opción 1 para actualizar.
+El servicio mantiene SQLite en `/opt/gerstep-interactive/data` y sus claves en
+`/etc/gerstep-interactive.env`, fuera de la copia Git.
 
 React viene compilado y **Node no queda como servicio**. Si falta la compilación,
 el instalador descarga un Node LTS oficial, verifica su SHA-256 y compila React.
@@ -50,12 +59,17 @@ El menú también permite:
 - Activar/desactivar el receptor opcional de TikTok.
 - Consultar incidencias y crear una copia consistente de SQLite.
 
-Puede ejecutarse nuevamente desde la carpeta subida o desde la instalación:
+Puede ejecutarse nuevamente desde la copia Git o desde la instalación:
 
 ```bash
 cd /opt/gerstep-interactive
 ./install
 ```
+
+El instalador guarda la ruta de la copia Git para que también el menú de `/opt`
+actualice desde allí. Esa carpeta debe seguir existiendo y estar fuera de `/opt/gerstep-interactive`.
+Una instalación antigua sin esa ruta registrada debe actualizarse primero desde
+la copia clonada. Si no hay copia Git, el menú informa que usará el código disponible.
 
 El servicio sigue funcionando cuando cerrás SSH o el menú. Los indicadores de
 progreso solo se animan en una terminal; `NO_COLOR=1` desactiva el color.
@@ -187,5 +201,11 @@ El backend no carga ni ejecuta archivos `.env` automáticamente.
 
 Pruebas locales verifican HTTP/WebSocket, login, moderación, aislamiento,
 preservación de datos, transacciones y configuraciones Nginx representativas.
+La regresión del arranque sin encuesta/voto se verifica en un navegador Chromium
+real con el probe opcional `tests/browser_probe.py`: configurar `BROWSER_BINARY`
+con la ruta del ejecutable de Chrome/Edge y ejecutar ese archivo con Python.
+Usa un perfil temporal, una base en memoria y loopback. También prueba votar,
+recargar, cambiar/cerrar encuestas y ausencia de desbordamiento horizontal en
+1280×800 y 390×844. No necesita Playwright ni dependencias nuevas de producción.
 **No se ha ejecutado el instalador en tu VPS ni emitido un certificado real.**
 La configuración concreta de ese servidor se valida al ejecutar el menú.
