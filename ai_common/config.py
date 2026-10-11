@@ -34,18 +34,21 @@ class AIConfig:
     base_url: str = 'https://integrate.api.nvidia.com/v1'
     model: str = 'nvidia/nemotron-3.5-lightning-30b-a3b'
     requests_per_minute: int = 30
-    tokens_per_minute: int = 12000
+    tokens_per_minute: int = 60000
     reserved_requests: int = 3
     reserved_tokens: int = 1000
     concurrency: int = 1
     event_queue_size: int = 24
     queue_size: int = 8
     timeout: float = 8.0
-    first_token_timeout: float = 4.0
+    first_token_timeout: float = 6.0
     retries: int = 1
     user_cooldown: float = 12.0
     command_cooldown: float = 3.0
-    context_tokens: int = 1600
+    context_tokens: int = 16000
+    tools_enabled: bool = True
+    temperature: float = .55
+    top_p: float = .9
     memory_turns: int = 32
     memory_seconds: float = 300.0
     direct_ttl: float = 25.0
@@ -68,7 +71,7 @@ class AIConfig:
         bounds = {'requests_per_minute':(1,120), 'tokens_per_minute':(1000,100000), 'reserved_requests':(0,20),
                   'concurrency':(1,3), 'event_queue_size':(4,128), 'queue_size':(1,24), 'timeout':(1,30),
                   'first_token_timeout':(.1,15), 'retries':(0,2), 'user_cooldown':(0,300),
-                  'command_cooldown':(0,60), 'context_tokens':(700,4000), 'memory_turns':(2,128),
+                  'command_cooldown':(0,60), 'context_tokens':(700,24000), 'temperature':(0,1.5), 'top_p':(.1,1), 'memory_turns':(2,128),
                   'memory_seconds':(30,1800), 'direct_ttl':(2,60), 'creative_ttl':(2,90), 'idle_ttl':(1,30),
                   'idle_seconds':(30,600), 'idle_ai_every':(2,20), 'tts_queue_size':(4,20),
                   'tts_prepared_audio':(1,2), 'tts_timeout':(1,12), 'tts_workers':(1,1), 'max_speech_seconds':(8,60)}

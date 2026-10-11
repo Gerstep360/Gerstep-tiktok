@@ -17,7 +17,7 @@ class FakeClient:
     def __init__(self): self.calls=0;self.closed=False;self.delay=0
     async def generate(self,*args,**kwargs):
         self.calls+=1;await asyncio.sleep(self.delay)
-        return Completion('Un NPC abrió el administrador de tareas. Se encontró a sí mismo.',1,5)
+        return Completion('Vos abrió el administrador de tareas del NPC. Se encontró a sí mismo.',1,5)
     async def close(self): self.closed=True
 
 

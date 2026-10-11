@@ -1,4 +1,4 @@
-"""Reusable aiohttp NVIDIA client. Streaming text only; never executes tool calls."""
+"""Reusable streaming NVIDIA client; optional validated proposals, never execution."""
 import asyncio
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -8,6 +8,7 @@ import time
 
 import aiohttp
 from .memory import estimate_tokens
+from .tools import TOOL_INSTRUCTION, ToolCallBuffer, sound_tools
 
 
 class Unavailable(Exception):
@@ -22,6 +23,7 @@ class Completion:
     first_token_ms:float
     total_ms:float
     usage:dict | None=None
+    actions:tuple=()
 
 
 class NvidiaClient:
@@ -39,21 +41,31 @@ class NvidiaClient:
             await self.session.close()
             self.session=None
 
-    async def generate(self,messages,max_tokens,*,priority,expires):
+    async def generate(self,messages,max_tokens,*,priority,expires,tools_enabled=False,force_tool=False):
+        if force_tool and not tools_enabled: raise ValueError('Forced tool requires declared tools')
         if not self.config.enabled or not self.config.api_key: raise Unavailable('offline')
         if self.session is None:
             self.session=aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.config.concurrency,ttl_dns_cache=300),
                 timeout=aiohttp.ClientTimeout(total=self.config.timeout,connect=3,sock_read=self.config.first_token_timeout),
                 trust_env=False)
-        payload={'model':self.config.model,'messages':messages,'max_tokens':max_tokens,
-                 'temperature':1.0,'top_p':.95,'stream':True,'stream_options':{'include_usage':True}}
+        request_messages=list(messages)
+        if tools_enabled:
+            request_messages.insert(1 if request_messages and request_messages[0].get('role')=='system' else 0,
+                                    {'role':'system','content':TOOL_INSTRUCTION})
+        payload={'model':self.config.model,'messages':request_messages,'max_tokens':max_tokens,
+                 'temperature':self.config.temperature,'top_p':self.config.top_p,'stream':True,'stream_options':{'include_usage':True}}
+        if tools_enabled:
+            payload['tools']=sound_tools()
+            payload['tool_choice']={'type':'function','function':{'name':'queue_sound'}} if force_tool else 'auto'
         if self.config.model=='nvidia/nemotron-3.5-lightning-30b-a3b':
             payload['chat_template_kwargs']={'enable_thinking':self.config.thinking}
         began=time.monotonic()
         deadline=min(expires,began+self.config.timeout)
         for attempt in range(self.config.retries+1):
             if time.monotonic()>=deadline: raise Unavailable('expired')
-            entry=self.budget.reserve(estimate_tokens(messages)+max_tokens,priority=priority)
+            estimate=estimate_tokens(request_messages)+max_tokens
+            if tools_enabled: estimate+=estimate_tokens(payload['tools'])
+            entry=self.budget.reserve(estimate,priority=priority)
             if entry is None: raise Unavailable('quota')
             usage=None
             first=None
@@ -76,6 +88,7 @@ class NvidiaClient:
                             raise Unavailable('server')
                         if response.status!=200: raise Unavailable('http_'+str(response.status))
                         chunks=[]
+                        proposed=ToolCallBuffer()
                         first=None
                         size=0
                         ended=False
@@ -98,6 +111,10 @@ class NvidiaClient:
                             if not isinstance(choices,list) or not isinstance(choices[0],dict): raise Unavailable('invalid_stream')
                             delta=choices[0].get('delta') or {}
                             if not isinstance(delta,dict): raise Unavailable('invalid_stream')
+                            if tools_enabled and 'tool_calls' in delta:
+                                proposed.feed(delta['tool_calls'])
+                                if first is None and proposed.seen:
+                                    first=(time.monotonic()-began)*1000
                             fragment=delta.get('content')
                             if isinstance(fragment,str) and fragment:
                                 if first is None: first=(time.monotonic()-began)*1000
@@ -106,13 +123,18 @@ class NvidiaClient:
                                 chunks.append(fragment)
                             if first is None and time.monotonic()-began>self.config.first_token_timeout:
                                 raise Unavailable('first_token_timeout')
-                        if not chunks or not ended: raise Unavailable('incomplete_stream')
+                        text=''.join(chunks)
+                        if tools_enabled: text=proposed.spoken_text(text)
+                        if not text.strip() or not ended: raise Unavailable('incomplete_stream')
                         elapsed=(time.monotonic()-began)*1000
                         if self.config.metrics:
                             self.first_tokens.append(first)
                             self.generations.append(elapsed)
                         self.stats['completed']+=1
-                        return Completion(''.join(chunks),first,elapsed,usage)
+                        actions=proposed.actions(spoken_text=text) if tools_enabled else ()
+                        if tools_enabled and proposed.seen:
+                            self.stats['tool_proposals' if actions else 'tool_rejected']+=1
+                        return Completion(text,first,elapsed,usage,actions)
             except asyncio.CancelledError:
                 self.stats['cancelled']+=1
                 raise

@@ -4,10 +4,10 @@ import time
 import uuid
 from collections import deque
 from .client import NvidiaClient, Unavailable
-from .memory import Memory, PromptBuilder, prepare_answer, creative_output_rejected
+from .memory import Memory, PromptBuilder, prepare_answer, creative_output_rejected, speech_text
 from .queue import Job
 from .quota import Budget
-from .router import route, safe_input, fallback, command_argument
+from .router import route, safe_input, fallback, command_argument, validate_command
 
 
 class PreviewChat:
@@ -21,7 +21,7 @@ class PreviewChat:
         self.active = False
         self.tasks = set()
 
-    async def ask(self, text, owner='operator'):
+    async def ask(self, text, owner='operator', *, tools_enabled=False):
         if not isinstance(text, str) or not safe_input(text) or len(text)>700:
             raise ValueError('Escribí hasta 700 caracteres, sin enlaces ni instrucciones administrativas.')
         if self.active: raise ValueError('Ya hay una prueba en curso.')
@@ -39,25 +39,34 @@ class PreviewChat:
             elif text.startswith(('!','/')) and classified.category!='ai':
                 local = 'Ese comando activa una función del LIVE. Este chat solo prueba respuestas de texto; no ejecuta acciones.'
             now = time.monotonic()
-            job = Job(owner,text,'Gerstep',classified.kind or 'conversation',3,now,now+self.config.timeout,classified.command,id='preview:'+uuid.uuid4().hex)
+            job = Job(owner,text,'Vos',classified.kind or 'conversation',3,now,now+self.config.timeout,classified.command,id='preview:'+uuid.uuid4().hex)
+            if error:=validate_command(job): raise ValueError(error)
             if job.kind=='confession' and not command_argument(job).strip():
                 raise ValueError('Escribí tu confesión después de !confesarse.')
             if job.kind=='confession' and len(command_argument(job).split())>120:
                 raise ValueError('La confesión admite hasta 700 caracteres y 120 palabras para leerla completa.')
             source = 'local'
             answer = local
+            effect_id = ''
             if answer is None:
                 messages,tokens,words,_ = self.prompts.build(job)
                 try:
-                    result = await self.client.generate(messages,tokens,priority=3,expires=job.expires)
+                    result = await self.client.generate(messages,tokens,priority=3,expires=job.expires,
+                        tools_enabled=bool(tools_enabled and self.config.tools_enabled and job.kind in {'joke','story','reaction'}))
                     answer = prepare_answer(job,result.text,words=words,secret=self.config.api_key)
                     if not answer: raise Unavailable('unsafe_output')
-                    source = 'fallback' if creative_output_rejected(job,result.text) else 'nvidia'
+                    invalid=(creative_output_rejected(job,result.text) or
+                             creative_output_rejected(job,speech_text(result.text,words=words,secret=self.config.api_key)))
+                    source = 'fallback' if invalid else 'nvidia'
+                    if source=='nvidia' and tools_enabled and self.config.tools_enabled:
+                        from .tools import SOUND_IDS
+                        actions=getattr(result,'actions',())
+                        if len(actions)==1 and actions[0].effect_id in SOUND_IDS: effect_id=actions[0].effect_id
                 except Unavailable:
                     answer = prepare_answer(job,fallback(job),words=words,secret=self.config.api_key)
                     source = 'fallback'
             self.pending.append((job,answer,time.monotonic()))
-            return {'id':job.id,'text':answer,'source':source,'quota':self.budget.snapshot()}
+            return {'id':job.id,'text':answer,'source':source,'quota':self.budget.snapshot(),'kind':job.kind,'effect_id':effect_id}
         finally:
             self.active = False
             self.tasks.discard(task)
@@ -71,8 +80,10 @@ class PreviewChat:
         return False
 
     def snapshot(self):
+        from .personality import personality_metadata
         return {'configured':bool(self.config.api_key),'enabled':self.config.enabled,
-                'model':self.config.model,'active':self.active,'quota':self.budget.snapshot()}
+                'model':self.config.model,'active':self.active,'quota':self.budget.snapshot(),
+                'personality':personality_metadata()}
 
     async def close(self):
         tasks = [t for t in self.tasks if t is not asyncio.current_task()]

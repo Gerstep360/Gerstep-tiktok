@@ -25,5 +25,7 @@
 .ai-message strong {font-size:12px;color:#25f4ee}
 .ai-message p {white-space:pre-wrap;margin:8px 0 0;line-height:1.6}
 .ai-compose {margin-top:22px}
+.ai-send-live {display:flex;align-items:center;gap:10px;margin:12px 0 18px;font-size:13px}
+.ai-send-live input {width:auto;min-height:0;accent-color:var(--cyan)}
 .ai-compose>div {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 @media(max-width:600px){.ai-message,.ai-message.own {margin:0}.ai-compose button {width:100%}}

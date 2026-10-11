@@ -50,6 +50,8 @@ class Hub:
         self.ai_preview = ai_preview or create_preview()
         from .ai_actions import AIEffects
         self.ai_effects = AIEffects()
+        from .ai_delivery import AIDelivery
+        self.ai_delivery = AIDelivery()
 
     async def start(self):
         await self.db.start()
@@ -137,6 +139,7 @@ class Hub:
         result = await self.call(self.domain.moderate, action, payload)
         if action in {'clear', 'preferences'} and (action == 'clear' or self.domain.suspended):
             self.actions.clear()
+            self.ai_delivery.clear()
             if self.bridge:
                 try: self.bridge.queue.put_nowait({'type': 'cancel_web'})
                 except asyncio.QueueFull: await self.bridge.socket.close(code=1013)
@@ -277,9 +280,10 @@ async def admin_state(request):
 
 async def admin_ai(request):
     session = actor(request, 'admin')
-    preview = request.app[HUB].ai_preview
+    hub = request.app[HUB]
+    preview = hub.ai_preview
     if request.method == 'GET':
-        return web.json_response(preview.snapshot())
+        return web.json_response({**preview.snapshot(),'deliveries':hub.ai_delivery.snapshot(session['id'])})
     values = await body(request)
     if values.get('action') == 'ack':
         return web.json_response({'acknowledged':preview.acknowledge(session['id'],values.get('id',''))})
@@ -288,8 +292,13 @@ async def admin_ai(request):
         preview.memory.forget(session['id'])
         return web.json_response({'cleared':True})
     rate(request, 'admin-ai-test', limit=6, period=60)
-    if set(values) != {'text'}: raise ValueError('Solo se permite texto de prueba.')
-    return web.json_response(await preview.ask(values['text'],session['id']))
+    if set(values)-{'text','send_to_live'} or 'text' not in values: raise ValueError('Solo se permite texto y envío al programa.')
+    send=values.get('send_to_live',False)
+    if type(send) is not bool: raise ValueError('El envío al programa debe ser una opción booleana.')
+    if send: hub.ai_delivery.available(hub)
+    result=await preview.ask(values['text'],session['id'],tools_enabled=send)
+    if send: result['delivery']=hub.ai_delivery.enqueue(hub,result,session['id'])
+    return web.json_response(result)
 
 
 async def connection_export(request):
@@ -391,7 +400,7 @@ async def websocket(request):
     async def sender():
         while True:
             message = await peer.queue.get()
-            if message.get('type') == 'ai_effect' and message.get('expires', 0) <= time.time():
+            if message.get('type') in {'ai_effect','ai_response'} and message.get('expires', 0) <= time.time():
                 continue
             if message.get('type') == 'snapshot':
                 data = message['state']
@@ -425,6 +434,7 @@ async def websocket(request):
                     update_catalog(hub, events)
                     await hub.call(hub.domain.ingest, events)
                 elif payload.get('type') == 'ack':
+                    if hub.ai_delivery.acknowledge(payload.get('action_id'),payload.get('status')): continue
                     action = hub.actions.get(payload.get('action_id'))
                     if action:
                         status = payload.get('status')
@@ -448,6 +458,7 @@ async def websocket(request):
         abandoned = list(hub.actions.values()) if was_bridge else []
         if was_bridge:
             hub.bridge = None
+            hub.ai_delivery.clear()
             hub.source_changed.set()
         hub.dirty.set()
         await asyncio.gather(task, return_exceptions=True)

@@ -316,6 +316,13 @@ def main():
                 values['GERSTEP_AI_ENABLED'] = 'true' if ui.yes('Habilitar pruebas IA privadas',True) else 'false'
                 values.setdefault('GERSTEP_AI_REQUESTS_PER_MINUTE','6')
                 values.setdefault('GERSTEP_AI_RESERVED_REQUESTS','0')
+                ui.say('La skill completa usa aproximadamente 10–11 mil tokens estimados de contexto por consulta. El uso real lo informa NVIDIA.')
+                context=int(ui.ask('Presupuesto total de contexto IA (16000–24000)',str(max(16000,int(values.get('GERSTEP_AI_CONTEXT_TOKENS','16000'))))))
+                tokens=int(ui.ask('Presupuesto operativo de tokens/minuto (12000–100000)',str(max(60000,int(values.get('GERSTEP_AI_TOKENS_PER_MINUTE','60000'))))))
+                if not 16000<=context<=24000 or not 12000<=tokens<=100000:
+                    raise ValueError('Presupuesto fuera del rango. No se guardaron cambios.')
+                values['GERSTEP_AI_CONTEXT_TOKENS']=str(context)
+                values['GERSTEP_AI_TOKENS_PER_MINUTE']=str(tokens)
                 write_env(ENV,values)
                 runner.run(['systemctl','restart',SERVICE])
                 ui.say('IA privada configurada. Abrí la pestaña IA del administrador.','32')
