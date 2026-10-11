@@ -81,23 +81,24 @@ def choose(items, host, ui):
 def attach(text, block, host, directive=INCLUDE):
     body = text[block.opening:block.closing]
     body_code = ' '.join(m.group() for m in TOKEN.finditer(body) if not m.group().startswith('#'))
-    if directive == INCLUDE:
-        if ['/etc/nginx/snippets/gerstep-interactive.conf'] in block.values('include'): return text
-    elif ' '.join(m.group() for m in TOKEN.finditer(directive)) in body_code: return text
-    if directive == INCLUDE and re.search(r'\blocation\s+[^\n{]*[/]Gerstep', body_code):
+    included = (['/etc/nginx/snippets/gerstep-interactive.conf'] in block.values('include')
+                if directive == INCLUDE else ' '.join(m.group() for m in TOKEN.finditer(directive)) in body_code)
+    if directive == INCLUDE and not included and re.search(r'\blocation\s+[^\n{]*[/]Gerstep', body_code):
         raise ValueError('/Gerstep ya está configurado por otra instalación.')
-    edits = [(block.closing, block.closing, '\n    ' + directive + '\n')]
+    edits = [] if included else [(block.closing, block.closing, '\n    ' + directive + '\n')]
+    # Server rewrites (including return inside if/include) run BEFORE location
+    # lookup. Skip that phase only for our route; leave other applications intact.
+    pattern = '^/Gerstep(/|$)' if directive == INCLUDE else '^/\\.well-known/acme-challenge/'
+    bypass = f'if ($uri ~ "{pattern}") {{ break; }}'
+    bypass_code = ' '.join(m.group() for m in TOKEN.finditer(bypass))
+    if bypass_code not in body_code:
+        edits.append((block.opening, block.opening, '\n    # Gerstep: bypass server rewrites only for its own route.\n    ' + bypass + '\n'))
     names = [d for d in block.directives if d[0] == 'server_name']
     if not any(host in d[1] for d in names):
         if names:
             name = names[0]
             edits.append((name[2], name[3], 'server_name ' + ' '.join([*name[1], host]) + ';'))
         else: edits.append((block.opening, block.opening, '\n    server_name ' + host + ';\n'))
-    if directive == CHALLENGE:
-        for name, values, begin, end in block.directives:
-            if name == 'return':
-                # Server-level redirects run before locations. Preserve their behavior except ACME.
-                edits.append((begin, end, 'if ($uri !~ "^/\\.well-known/acme-challenge/") { return ' + ' '.join(values) + '; }'))
     for begin, end, replacement in sorted(edits, reverse=True): text = text[:begin] + replacement + text[end:]
     return text
 

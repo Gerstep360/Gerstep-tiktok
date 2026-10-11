@@ -3,6 +3,7 @@ import asyncio
 from contextlib import contextmanager
 import dataclasses
 import json
+import io
 import os
 from pathlib import Path
 import shutil
@@ -12,6 +13,7 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,7 @@ from backend.tiktok_intake import Intake
 from backend.validation import youtube_id
 from deploy import nginx, tls
 from deploy import cli
+from deploy.ui import UI
 from deploy.cli import copy_application, origin, settings
 from deploy.code_backup import CodeBackup
 from deploy.package import package
@@ -40,6 +43,42 @@ def config(**kwargs):
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_public_health_reports_nginx_failure_and_does_not_accept_html(self):
+        endpoint = 'https://example.org/Gerstep/api/health'
+        for failure in (HTTPError(endpoint, 404, 'Not Found', {}, None), ValueError('HTML page')):
+            opener = SimpleNamespace(open=lambda *args, **kwargs: None)
+            with patch.object(cli, 'build_opener', return_value=opener), \
+                    patch.object(opener, 'open', side_effect=failure), patch.object(cli.time, 'sleep'), \
+                    self.assertRaisesRegex(RuntimeError, 'backend local responde.*' + endpoint):
+                cli.public_health('https://example.org')
+
+    def test_public_health_checks_json_and_refuses_redirects(self):
+        response = io.BytesIO(b'{"ok": true}')
+        response.status = 200
+        opener = SimpleNamespace(open=lambda *args, **kwargs: response)
+        with patch.object(cli, 'build_opener', return_value=opener):
+            cli.public_health('https://example.org')
+        self.assertIsNone(cli.NoRedirect().redirect_request(None, None, 301, '', {}, 'https://other.org'))
+
+    def test_menu_password_explains_length_and_mismatch_without_printing_secrets(self):
+        output = io.StringIO()
+        with patch('sys.stdout', output), patch('getpass.getpass', side_effect=[
+                'short', 'valid-password-123', 'different-password-123', 'valid-password-123', 'valid-password-123']):
+            self.assertEqual(UI().password(), 'valid-password-123')
+        self.assertIn('de 12 a 256 caracteres', output.getvalue())
+        self.assertIn('no coinciden', output.getvalue())
+        self.assertNotIn('valid-password', output.getvalue())
+
+    def test_step_status_is_readable_without_unicode_symbols(self):
+        output = io.StringIO()
+        with patch('sys.stdout', output):
+            ui = UI()
+            with ui.step('Preparar'): pass
+            with self.assertRaises(RuntimeError), ui.step('Validar'): raise RuntimeError('test')
+        self.assertIn('[OK] Preparar', output.getvalue())
+        self.assertIn('[ERROR] Validar', output.getvalue())
+        self.assertNotIn('\033', output.getvalue())
+
     def test_code_backup_restores_existing_program_without_touching_data(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -65,6 +104,9 @@ class DeploymentTests(unittest.TestCase):
                       'GERSTEP_DB': str(app / 'data/interactive.sqlite3'), 'GERSTEP_COLLECT_TIKTOK': '0'}
             commands, writes, snapshots = [], {}, []
             fail = [True]
+            public_fail = [False]
+            def public_health(*args):
+                if public_fail[0]: raise RuntimeError('simulated public route 404')
             class UI:
                 def say(self, *args): pass
                 def yes(self, *args): return True
@@ -91,16 +133,21 @@ class DeploymentTests(unittest.TestCase):
                 return True if str(path).replace('\\', '/') == '/run/systemd/system' else real_exists(path)
             with patch.object(cli, 'APP', app), patch.object(cli, 'ENV', env), patch.object(cli, 'settings', lambda *args: values), \
                     patch.object(cli, 'packages', lambda *args: None), patch.object(cli, 'ensure_frontend', lambda *args: None), \
-                    patch.object(cli, 'Transaction', Tx), patch.object(cli, 'CodeBackup', lambda *args: CodeBackup(app, root / 'backup/code')), \
+                    patch.object(cli, 'Transaction', Tx), patch.object(cli, 'CodeBackup', lambda *args: CodeBackup(app, root / 'backup/code' / str(len(commands)))), \
                     patch.object(cli.shutil, 'which', lambda name: '/usr/bin/' + name), patch.object(Path, 'exists', exists), \
                     patch.object(tls, 'trusted', lambda *args: True), \
                     patch.object(nginx, 'loaded_files', lambda *args: {site: site.read_text()}), \
                     patch.object(cli, 'await_health', lambda *args: None), \
-                    patch.object(cli, 'urlopen', lambda *args, **kwargs: __import__('contextlib').nullcontext(SimpleNamespace(status=200))):
+                    patch.object(cli, 'public_health', public_health):
                 with self.assertRaisesRegex(RuntimeError, 'simulated Nginx failure'): cli.install(UI(), Runner())
                 self.assertEqual(site.read_text(), original)
                 self.assertFalse(env.exists())
                 fail[0] = False
+                public_fail[0] = True
+                with self.assertRaisesRegex(RuntimeError, 'simulated public route 404'): cli.install(UI(), Runner())
+                self.assertEqual(site.read_text(), original)
+                self.assertFalse(env.exists())
+                public_fail[0] = False
                 cli.install(UI(), Runner())
             self.assertIn(nginx.INCLUDE, site.read_text())
             self.assertTrue(env.exists())
@@ -210,6 +257,19 @@ class DeploymentTests(unittest.TestCase):
 
 
 class NginxTests(unittest.TestCase):
+    def test_server_rewrites_are_bypassed_only_for_gerstep_and_updates_repair_old_include(self):
+        for rule in ('return 404;', 'return 301 https://$host$request_uri;',
+                     'if ($request_method = GET) { return 404 "existing response"; }',
+                     'rewrite ^ /other permanent;', 'include /etc/nginx/site-rewrites.conf;'):
+            text = 'server { listen 443 ssl; server_name example.org; ' + rule + ' ' + nginx.INCLUDE + ' }'
+            changed = nginx.attach(text, nginx.blocks(text)[0], 'example.org')
+            with self.subTest(rule=rule):
+                self.assertIn(rule, changed)
+                self.assertLess(changed.index('break;'), changed.index(rule))
+                self.assertIn('"^/Gerstep(/|$)"', changed)
+                self.assertEqual(changed.count(nginx.INCLUDE), 1)
+                self.assertEqual(nginx.attach(changed, nginx.blocks(changed)[0], 'example.org'), changed)
+
     def test_renewal_skips_reload_when_certificates_do_not_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -246,7 +306,8 @@ class NginxTests(unittest.TestCase):
     def test_acme_bypasses_server_redirect_only_for_challenge(self):
         text = 'server { listen 80; server_name a.example; return 301 https://$host$request_uri; }'
         changed = nginx.attach(text, nginx.blocks(text)[0], '167.86.106.105', nginx.CHALLENGE)
-        self.assertIn('if ($uri !~', changed)
+        self.assertIn('if ($uri ~', changed)
+        self.assertLess(changed.index('break;'), changed.index('return 301'))
         self.assertIn('return 301 https://$host$request_uri;', changed)
         self.assertIn(nginx.CHALLENGE, changed)
         self.assertEqual(len(nginx.blocks(changed)), 1)

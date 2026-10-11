@@ -10,7 +10,8 @@ import sqlite3
 import sys
 import time
 from urllib.parse import urlparse
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener, urlopen
 
 SOURCE = Path(__file__).resolve().parents[1]
 if str(SOURCE) not in sys.path: sys.path.insert(0, str(SOURCE))
@@ -67,6 +68,36 @@ def await_health(port):
         try: health(port); return
         except OSError: time.sleep(.5)
     raise RuntimeError('El servicio no inició. Revisá el registro del menú.')
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        return None
+
+
+def public_health(base):
+    endpoint = base + '/Gerstep/api/health'
+    # Test the actual VPS route, without shell proxy settings or redirect fallback.
+    opener = build_opener(ProxyHandler({}), NoRedirect())
+    detail = ''
+    for attempt in range(3):
+        try:
+            with opener.open(endpoint, timeout=3) as response:
+                payload = json.loads(response.read(1024))
+                if response.status != 200 or not isinstance(payload, dict) or payload.get('ok') is not True:
+                    raise ValueError('respuesta inesperada')
+            return
+        except HTTPError as exc:
+            detail = f'Nginx respondió HTTP {exc.code}'
+            exc.close()
+        except (URLError, OSError):
+            detail = 'no se pudo conectar o validar HTTPS'
+        except (ValueError, UnicodeError):
+            detail = 'la ruta no devolvió la respuesta de salud de Gerstep'
+        if attempt < 2: time.sleep(.5)
+    raise RuntimeError(f'El backend local responde, pero {detail} en {endpoint}. '
+                       'Revisá el servidor Nginx seleccionado y sus reglas de /Gerstep. '
+                       'Se cancelará la instalación y se restaurará la configuración anterior.')
 
 
 def settings(ui, old):
@@ -170,8 +201,7 @@ def install(ui, runner):
                 await_health(int(values['GERSTEP_PORT']))
                 runner.run(['systemctl', 'reload', 'nginx'])
                 if not tls.trusted(host): raise RuntimeError('La verificación HTTPS pública falló. No se dará por completa la instalación.')
-                with urlopen(values['GERSTEP_ORIGIN'] + '/Gerstep/api/health', timeout=10) as response:
-                    if response.status != 200: raise RuntimeError('La ruta pública no responde.')
+                public_health(values['GERSTEP_ORIGIN'])
                 if tls.CERTBOT.is_file() or tls.STATE.is_file():
                     runner.run(['systemctl', 'enable', '--now', 'gerstep-interactive-renew.timer'])
                 elif timer_enabled:

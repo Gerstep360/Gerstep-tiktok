@@ -2,20 +2,22 @@
 
 Repositorio independiente del programa Windows: React/Vite, Python/aiohttp,
 SQLite y herramientas de despliegue. Se puede copiar **solamente esta carpeta**
-o descomprimir su ZIP. No necesita el repositorio TikTok padre, Tkinter, pygame,
+o clonar este repositorio. No necesita el repositorio TikTok padre, Tkinter, pygame,
 TTS, sonidos ni automatizaciones del PC.
 
 ## Instalar en el VPS
 
-Subí el ZIP, descomprimilo y entrá en la carpeta donde está `install`:
+Cloná el repositorio independiente y ejecutá el menú:
 
 ```bash
+git clone https://github.com/Gerstep360/Gerstep-tiktok.git
+cd Gerstep-tiktok
 ./install
 ```
 
 Sin argumentos ni rutas de archivos Nginx. Si tu transferencia perdió el permiso
-de ejecución, recuperalo con `chmod +x install`. El ZIP preparado conserva ese
-permiso. El script solicita sudo cuando corresponde y abre un menú. Funciona con
+de ejecución, recuperalo con `chmod +x install` o usá `bash ./install`.
+El script solicita sudo cuando corresponde y abre un menú. Funciona con
 Debian 12+, Ubuntu 22.04+ y distribuciones con dnf, Python 3.10+ y systemd. No es
 un instalador para Windows ni para contenedores sin systemd.
 
@@ -23,6 +25,17 @@ Elegí **1 · Instalar / actualizar**. El menú solicita IP/dominio (predetermin
 `https://167.86.106.105`), contraseña privada y si querés el receptor de TikTok.
 Luego muestra la configuración antes de aplicarla. Genera automáticamente las
 claves, elige un puerto libre y prepara paquetes, entorno Python, Nginx y systemd.
+La contraseña requiere **de 12 a 256 caracteres**; no aparece mientras la escribís.
+
+Para actualizar una copia ya clonada (también después de una instalación fallida):
+
+```bash
+cd ~/app/Gerstep-tiktok
+git pull --ff-only
+./install
+```
+
+Elegí la opción 1. Se conserva la configuración de una instalación anterior.
 
 React viene compilado y **Node no queda como servicio**. Si falta la compilación,
 el instalador descarga un Node LTS oficial, verifica su SHA-256 y compila React.
@@ -53,6 +66,14 @@ La instalación ocupa `/Gerstep/`. Detecta los archivos realmente cargados por
 Nginx y selecciona el servidor de la IP/dominio; si hay varios candidatos,
 presenta una selección en el menú. Añade su configuración, comprueba `nginx -t`
 y recarga Nginx. Guarda los originales en `/var/backups/gerstep-interactive/`.
+Las reglas `return`, `rewrite` o `if` del servidor se omiten únicamente para
+`/Gerstep` y `/Gerstep/…`, para que un 404 o una redirección anterior no impidan
+alcanzar el proxy. Las demás rutas conservan esas reglas. Esto también se repara
+al actualizar una instalación que ya contiene el include de Gerstep.
+Nginx ejecuta esas reglas antes de buscar el `location`;
+[referencia oficial](https://nginx.org/en/docs/http/ngx_http_rewrite_module.html).
+Si la comprobación pública falla, el menú identifica la URL y el estado HTTP;
+no acepta una página HTML ni una redirección como prueba de funcionamiento.
 Ante un error o Ctrl+C restaura las configuraciones modificadas y el código
 anterior, sin detener otras aplicaciones ni modificar sus directorios o cuentas
 ACME. Solo Gerstep se detiene brevemente durante una actualización. Los paquetes

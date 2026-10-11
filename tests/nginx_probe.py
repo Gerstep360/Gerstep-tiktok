@@ -39,13 +39,13 @@ def certificate(openssl, folder, name, alternative):
              '-keyout', folder / (name + '.key'), '-out', folder / (name + '.crt')])
 
 
-def other_application(tls_port, context):
+def routing_response(tls_port, context, host, path, status):
     with socket.create_connection(('127.0.0.1', tls_port), timeout=3) as raw:
         with context.wrap_socket(raw, server_hostname='localhost') as stream:
-            stream.sendall(b'GET / HTTP/1.0\r\nHost: localhost\r\n\r\n')
+            stream.sendall(f'GET {path} HTTP/1.0\r\nHost: {host}\r\n\r\n'.encode())
             received = b''
             while chunk := stream.recv(4096): received += chunk
-            assert b'original application' in received, received
+            assert received.startswith(f'HTTP/1.1 {status} '.encode()), received
 
 
 async def probe():
@@ -68,13 +68,26 @@ async def probe():
             }}''' for suffix in ('crt', 'key'))
             proxy = (ROOT / 'deploy/nginx-location.conf').read_text().replace('127.0.0.1:9081', f'127.0.0.1:{backend.port}')
             limits = (ROOT / 'deploy/nginx-limits.conf').read_text()
-            server = f'''server {{ listen 127.0.0.1:{tls_port} ssl default_server;
+            original = f'''server {{ listen 127.0.0.1:{tls_port} ssl default_server;
                 server_name localhost 127.0.0.1;
                 ssl_certificate $gerstep_tls_crt; ssl_certificate_key $gerstep_tls_key;
                 ssl_certificate_cache max=8 inactive=20s valid=1m;
-                location / {{ return 200 "original application"; }}
-                {proxy}
+                return 404 "original application";
+                {nginx.INCLUDE}
             }}'''
+            # Real regression: a valid proxy location is unreachable without the
+            # server-rewrite bypass. Also preserve unrelated paths and redirects.
+            unpatched = original.replace(' ssl default_server;', ' ssl;').replace(
+                'server_name localhost 127.0.0.1;', 'server_name unpatched.local;').replace(nginx.INCLUDE, proxy)
+            server = nginx.attach(original, nginx.blocks(original)[0], '127.0.0.1')
+            server = server.replace(nginx.INCLUDE, proxy)
+            for host, rule in (('redirect.local', 'return 301 https://example.org$request_uri;'),
+                               ('conditional.local', 'if ($request_method = GET) { return 404; }')):
+                candidate = original.replace(' ssl default_server;', ' ssl;').replace(
+                    'server_name localhost 127.0.0.1;', f'server_name {host};').replace(
+                    'return 404 "original application";', rule)
+                server += '\n' + nginx.attach(candidate, nginx.blocks(candidate)[0], host).replace(nginx.INCLUDE, proxy)
+            server += '\n' + unpatched
             path = folder / 'nginx.conf'
             path.write_text(f'worker_processes 1;\nevents {{ worker_connections 128; }}\nhttp {{\n{limits}\n{maps}\n{server}\n}}')
             command([binary, '-t', '-p', folder.as_posix() + '/', '-c', path.as_posix()])
@@ -88,7 +101,14 @@ async def probe():
                     except OSError: await asyncio.sleep(.05)
                 ip_context = ssl.create_default_context(cafile=str(folder / 'ip.crt'))
                 domain_context = ssl.create_default_context(cafile=str(folder / 'localhost.crt'))
-                await asyncio.to_thread(other_application, tls_port, domain_context)
+                for host, route, status in (
+                    ('unpatched.local', '/Gerstep/api/health', 404),
+                    ('localhost', '/', 404), ('localhost', '/Gerstep-other', 404),
+                    ('redirect.local', '/Gerstep/api/health', 200),
+                    ('redirect.local', '/Gerstep-other', 301),
+                    ('conditional.local', '/Gerstep/api/health', 200),
+                    ('conditional.local', '/other', 404)):
+                    await asyncio.to_thread(routing_response, tls_port, domain_context, host, route, status)
                 base = conf.origin + '/Gerstep'
                 async with ClientSession(cookie_jar=CookieJar(unsafe=True)) as client:
                     async with client.get(base + '/api/health', ssl=ip_context) as response: assert response.status == 200
@@ -112,6 +132,8 @@ async def probe():
                         assert response.status == 200
                         assert '<!doctype html>' in await response.text()
                 return {'nginx_config': 'valid', 'https_ip_without_sni': True, 'existing_domain_with_sni': True,
+                        'unpatched_server_return_reproduces_404': True, 'server_return_and_conditional_return_fixed': True,
+                        'unrelated_paths_keep_original_status_and_redirect': True,
                         'real_proxy_http': True, 'real_proxy_websocket': True, 'frontend': True,
                         'certificates': 'disposable local fixtures, verified against their test CA', 'linux_systemd_install': False}
             finally:
