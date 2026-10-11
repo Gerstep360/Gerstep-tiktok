@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 022
+if (( $# != 0 )); then printf 'Ejecutá ./install sin argumentos; la configuración se hace en el menú.\n'; exit 2; fi
+if [[ "$(uname -s)" != Linux ]]; then printf 'Este instalador es para el VPS Linux.\n'; exit 1; fi
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if (( EUID != 0 )); then
+    command -v sudo >/dev/null || { printf 'Entrá como root o instalá sudo.\n'; exit 1; }
+    exec sudo bash "$ROOT_DIR/install"
+fi
+if ! command -v python3 >/dev/null; then
+    printf '\033[36mPreparando Python para abrir el menú…\033[0m\n'
+    if command -v apt-get >/dev/null; then apt-get update; apt-get install -y python3;
+    elif command -v dnf >/dev/null; then dnf install -y python3;
+    else printf 'Distribución sin apt/dnf: instalá Python 3.10+ para continuar.\n'; exit 1; fi
+fi
+exec python3 "$ROOT_DIR/deploy/cli.py"

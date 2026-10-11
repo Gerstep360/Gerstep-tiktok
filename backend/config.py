@@ -14,6 +14,7 @@ class Config:
     prefix: str = '/Gerstep'
     development: bool = False
     frontend: Path = Path(__file__).resolve().parents[1] / 'frontend' / 'dist'
+    admin_password_hash: str = ''
 
     def __post_init__(self):
         parsed = urlparse(self.origin)
@@ -34,4 +35,5 @@ class Config:
         return cls(origin=os.environ.get('GERSTEP_ORIGIN', 'https://167.86.106.105'),
                    secret=os.environ.get('GERSTEP_SESSION_SECRET', ''), bridge_token=os.environ.get('GERSTEP_BRIDGE_TOKEN', ''),
                    admin_token=os.environ.get('GERSTEP_ADMIN_TOKEN', ''), database=os.environ.get('GERSTEP_DB', 'data/interactive.sqlite3'),
-                   development=os.environ.get('GERSTEP_DEVELOPMENT') == '1')
+                   development=os.environ.get('GERSTEP_DEVELOPMENT') == '1',
+                   admin_password_hash=os.environ.get('GERSTEP_ADMIN_PASSWORD_HASH', ''))

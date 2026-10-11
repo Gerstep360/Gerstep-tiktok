@@ -1,179 +1,170 @@
-# Gerstep Interactive · VPS
+# Gerstep Interactive
 
-React + Vite, Python/aiohttp y SQLite. La web se sirve bajo
-`https://167.86.106.105/Gerstep/`. El programa Windows se conecta al VPS por
-WebSocket saliente; el VPS no abre conexiones hacia tu PC.
+Repositorio independiente del programa Windows: React/Vite, Python/aiohttp,
+SQLite y herramientas de despliegue. Se puede copiar **solamente esta carpeta**
+o descomprimir su ZIP. No necesita el repositorio TikTok padre, Tkinter, pygame,
+TTS, sonidos ni automatizaciones del PC.
 
-## Instalación
+## Instalar en el VPS
 
-Requiere Linux con systemd, Nginx ya instalado, Python 3.10+ y soporte `venv`.
-La distribución determina cómo instalar esos paquetes. El ZIP preparado incluye
-React compilado; **no hace falta Node en el VPS**.
-
-1. Sube `artifacts/gerstep-interactive-vps.zip` y descomprímelo en una carpeta nueva.
-2. Desde esa carpeta ejecuta:
+Subí el ZIP, descomprimilo y entrá en la carpeta donde está `install`:
 
 ```bash
-sudo bash vps/install.sh /etc/nginx/sites-available/TU_SITIO_HTTPS
+./install
 ```
 
-El archivo debe contener un único bloque HTTPS con
-`server_name 167.86.106.105`. El instalador añade un `include`, hace una copia
-`.gerstep-backup`, ejecuta `nginx -t` y restaura ese archivo si la validación falla.
-Conserva los otros bloques y ubicaciones. Si tu configuración usa otro
-`server_name` o un bloque por defecto, ejecuta sin argumento:
+Sin argumentos ni rutas de archivos Nginx. Si tu transferencia perdió el permiso
+de ejecución, recuperalo con `chmod +x install`. El ZIP preparado conserva ese
+permiso. El script solicita sudo cuando corresponde y abre un menú. Funciona con
+Debian 12+, Ubuntu 22.04+ y distribuciones con dnf, Python 3.10+ y systemd. No es
+un instalador para Windows ni para contenedores sin systemd.
+
+Elegí **1 · Instalar / actualizar**. El menú solicita IP/dominio (predeterminado
+`https://167.86.106.105`), contraseña privada y si querés el receptor de TikTok.
+Luego muestra la configuración antes de aplicarla. Genera automáticamente las
+claves, elige un puerto libre y prepara paquetes, entorno Python, Nginx y systemd.
+
+React viene compilado y **Node no queda como servicio**. Si falta la compilación,
+el instalador descarga un Node LTS oficial, verifica su SHA-256 y compila React.
+No instala librerías gráficas, sintetizadores de voz ni procesos del escritorio.
+
+El menú también permite:
+
+- Ver el estado del backend y comprobar HTTPS.
+- Reiniciar únicamente Gerstep.
+- Cambiar la contraseña y cerrar sesiones administrativas anteriores.
+- Exportar las claves para conectar el PC en un archivo privado.
+- Activar/desactivar el receptor opcional de TikTok.
+- Consultar incidencias y crear una copia consistente de SQLite.
+
+Puede ejecutarse nuevamente desde la carpeta subida o desde la instalación:
 
 ```bash
-sudo bash vps/install.sh
+cd /opt/gerstep-interactive
+./install
 ```
 
-Después añade **dentro del bloque HTTPS elegido**, sin sustituirlo:
+El servicio sigue funcionando cuando cerrás SSH o el menú. Los indicadores de
+progreso solo se animan en una terminal; `NO_COLOR=1` desactiva el color.
 
-```nginx
-include /etc/nginx/snippets/gerstep-interactive.conf;
-```
+## HTTPS y otras aplicaciones Nginx
 
-Valida con `sudo nginx -t` y recarga Nginx. La ruta `/Gerstep` redirige a
-`/Gerstep/`; las otras aplicaciones siguen usando sus rutas actuales.
+La instalación ocupa `/Gerstep/`. Detecta los archivos realmente cargados por
+Nginx y selecciona el servidor de la IP/dominio; si hay varios candidatos,
+presenta una selección en el menú. Añade su configuración, comprueba `nginx -t`
+y recarga Nginx. Guarda los originales en `/var/backups/gerstep-interactive/`.
+Ante un error o Ctrl+C restaura las configuraciones modificadas y el código
+anterior, sin detener otras aplicaciones ni modificar sus directorios o cuentas
+ACME. Solo Gerstep se detiene brevemente durante una actualización. Los paquetes
+Python ya instalados permanecen; la copia de seguridad no recrea el entorno venv.
 
-Se instala en `/opt/gerstep-interactive`, con usuario de servicio independiente,
-base en `data/`, puerto loopback 9081 y servicio `gerstep-interactive`. Si ese
-puerto está ocupado, la instalación inicial puede elegir otro:
+Si el HTTPS existente es válido para la IP, lo reutiliza. Si hace falta emitir
+un certificado, pide un email y la aceptación de las condiciones de la CA.
+Utiliza Certbot 5.4+ aislado y el desafío HTTP webroot: **el puerto 80 debe ser
+accesible desde Internet**. No detiene Nginx para realizar ese desafío ni abre
+el firewall del proveedor por su cuenta.
+
+Los certificados IP de Let's Encrypt tienen validez de seis días; para los
+certificados gestionados por Gerstep se activa un temporizador que comprueba
+renovación cada hora y recarga si cambian los archivos. El HTTPS reutilizado
+conserva la renovación externa existente. Certbot no
+instala por sí mismo estos certificados en Nginx, por eso esa parte está en el
+instalador. [Documentación oficial](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
+
+Una IP normalmente llega sin SNI. En un HTTPS compartido, el instalador conserva
+los certificados de los dominios con mapas basados en SNI y sirve el certificado
+IP cuando no hay SNI. Sus copias de claves son accesibles solo por root y el
+grupo de Nginx; el temporizador actualiza las copias cuando sus originales se
+renuevan. Los clientes antiguos de otros dominios **sin SNI** recibirían el
+certificado IP; para conservar también ese caso se requiere otra IP. Nginx debe
+soportar certificados variables (1.15.9+); en versiones anteriores a 1.27.4
+estos archivos se cargan en cada handshake; en las versiones nuevas el instalador
+habilita una caché de ocho entradas. [Referencia oficial de Nginx](https://nginx.org/en/docs/http/ngx_http_ssl_module.html).
+
+Configuraciones TLS con certificados múltiples/heredados/dinámicos o listeners
+con direcciones específicas se rechazan si hace falta cambiar su TLS. El menú
+informa del impedimento y restaura la configuración; no improvisa cambios sobre
+otros sistemas. No desactiva la validación TLS ni sirve certificados autofirmados.
+
+## Acceso privado y conexión al PC
+
+Público: `https://167.86.106.105/Gerstep/`.
+Administración: `https://167.86.106.105/Gerstep/login`, sin enlace público.
+La contraseña del menú queda como hash PBKDF2, separada de las claves del programa.
+Los secretos están en `/etc/gerstep-interactive.env`, con permisos root 0600.
+
+Opción **5 · Exportar conexión** crea `/root/gerstep-pc-connection.json` (0600)
+con `url`, `bridge_token` y `admin_api_token`. Transferí ese archivo privadamente
+y pegá sus valores en los campos URL, token del programa y clave administrativa
+del panel Interactive del PC. No publiques ese archivo. La contraseña humana
+del login no es la clave API administrativa del programa.
+
+El PC abre el WebSocket saliente y conserva su TTS, música, director y colas.
+La web sigue funcionando si el PC se desconecta; el bot y la reproducción musical
+requieren el programa conectado. No se reenvían voces obsoletas al reconectar.
+
+## TikTok opcional
+
+El menú instala TikTokLive solamente si activás el receptor. Es un adaptador
+pequeño sin audio y sin importaciones del programa de escritorio. Omite eventos
+de la conexión inicial, deduplica IDs y descarta eventos antiguos. Sin marcas
+temporales fiables aplica tres segundos de sincronización; eso no garantiza
+identificar un historial tardío sin timestamps. Reintenta con backoff y se
+suspende cuando conecta el puente del PC para evitar dos fuentes simultáneas.
+
+Los perfiles usan IDs numéricos estables, no apodos. El receptor local mantiene
+niveles en la misma base SQLite; un comentario suma experiencia como máximo cada
+30 segundos y los regalos multiplican el progreso con un límite por evento.
+La web conserva el mayor progreso recibido al alternar fuentes; **no suma dos
+historiales solapados**. Fusionar exactamente experiencia de PC y VPS sigue
+pendiente. Los tops no recuperan donaciones anteriores ni eventos perdidos.
+TikTokLive no es una API oficial de TikTok; la conexión real depende de TikTok,
+el LIVE y la red del VPS, y no se verificó en estas pruebas offline.
+
+## Comunidad, moderación y OBS
+
+Los visitantes reciben `Anónimo[n]` y una identidad persistente cuyo token se
+guarda en localStorage (hash en el servidor). El apodo es opcional. Cada encuesta
+admite un voto web por IP; la misma identidad puede cambiar su opción. Una red
+compartida comparte ese único voto; una VPN/red diferente puede eludir este
+límite. Las IP se guardan como HMAC, no en claro. TikTok vota con `/encuesta n`,
+identificado por ID estable: una sesión web no verifica identidad TikTok.
+
+El administrador aprueba preguntas/propuestas/comandos/enlaces YouTube, controla
+encuestas y sortea una **pregunta aprobada** con la ruleta. Esta selección no
+reproduce voz automáticamente. Puede ver/exportar votantes, bloquear, suspender
+interacciones, vaciar colas y registrar marcas de momentos destacados.
+OBS: `/Gerstep/overlay`. No graba ni publica clips automáticamente.
+La música usa el reproductor visible autorizado del PC; no descarga audio ni
+elude DRM. El foco conserva únicamente una abstracción, sin acciones físicas.
+
+Retención: preguntas 24 h, hasta 200 activas/2000 históricas; encuestas 100 y
+24 h después del cierre; 50.000 votos por encuesta; identidades/perfiles/donantes
+inactivos 30 días; regalos 50.000/30 días; marcas 500/7 días. El top global es
+acumulado para los perfiles conservados. Nginx sobrescribe `X-Real-IP`; si añadís
+otro proxy delante, hay que configurar explícitamente sus direcciones confiables.
+
+## Desarrollo independiente
 
 ```bash
-sudo GERSTEP_PORT=9082 bash vps/install.sh /etc/nginx/sites-available/TU_SITIO_HTTPS
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/python -m unittest discover -s tests -v
+cd frontend
+npm ci
+npm test
+npm run build
+cd ..
+python3 deploy/package.py
 ```
 
-No se detienen servicios ajenos. En actualizaciones se conserva el puerto y los
-secretos del archivo existente. Una validación fallida puede dejar los snippets
-nuevos en disco; no se recarga una configuración inválida. El instalador no
-reconfigura tu certificado ni instala automáticamente paquetes del sistema.
+El paquete se genera en `release/gerstep-interactive.zip`, con `install` en su
+raíz. Desarrollo local: completar `.env.example` y cargar sus valores como
+variables de entorno; ejecutar `python -m backend.server`. Para HTTP local usar
+`GERSTEP_DEVELOPMENT=1` y `GERSTEP_ORIGIN=http://127.0.0.1:9081`.
+El backend no carga ni ejecuta archivos `.env` automáticamente.
 
-## Acceso y conexión
-
-Abre `/Gerstep/login` directamente para entrar al panel. La web pública no
-incluye un enlace administrativo. La contraseña del panel es el valor
-`GERSTEP_ADMIN_TOKEN`, distinto de `GERSTEP_BRIDGE_TOKEN` y de la clave de firma.
-El instalador genera los tres y los guarda en `/etc/gerstep-interactive.env`,
-solo accesible por root. Consulta ese archivo de forma privada; no lo incluyas
-en logs, capturas, repositorios o solicitudes del chat.
-
-En el programa Windows, abre **Gerstep Interactive**, introduce
-`https://167.86.106.105/Gerstep` y el `GERSTEP_BRIDGE_TOKEN`, y pulsa **Conectar web**.
-Para moderar desde el programa introduce también la contraseña administrativa
-independiente. Estas credenciales quedan en memoria durante la sesión.
-Conecta TikTok y reanuda el presentador para habilitar respuestas del bot.
-
-El panel permite aprobar, rechazar, seleccionar para OBS, responder personalmente,
-enviar una respuesta breve al bot, crear/cerrar encuestas, elegir una pregunta
-aprobada con la ruleta, bloquear sesiones, suspender la web y exportar marcas.
-La ruleta no reproduce voz automáticamente.
-Las encuestas incluyen un registro privado de votantes, con nombre, identidad,
-opción y fuente. El panel muestra los 200 más recientes; la exportación NDJSON
-descarga todos los votos conservados de esa encuesta por bloques de 500, sin
-cargar toda la lista en RAM. La página pública no expone ese registro.
-
-## Identidad y votos
-
-Al entrar se crea `Anónimo[n]` sin exigir un apodo. El visitante puede elegir un
-nombre o volver a ser anónimo. El servidor emite un token aleatorio; el navegador
-lo conserva en localStorage y recibe una cookie HttpOnly. La base guarda el
-hash del token. Cambiar el apodo no cambia la identidad ni los votos.
-
-Cada encuesta admite **un voto web por IP**. Se puede cambiar la opción desde
-la misma identidad sin añadir votos. Una segunda identidad en esa IP no puede
-votar de nuevo. Los apoyos y límites de propuestas también consideran la IP.
-No se guardan IPs en claro: se usa HMAC con una clave privada del servidor.
-Nginx sobrescribe `X-Real-IP`; no pongas otro proxy delante sin adaptar esa
-configuración a sus direcciones de confianza.
-
-Una red compartida tiene un voto web total por encuesta. Cambiar de red/VPN puede
-evadir el criterio por IP; no equivale a verificar una persona. TikTok no entrega
-IPs: `/encuesta n` registra un voto por ID estable de TikTok. Sin vincular cuentas
-no se puede demostrar que un votante web y uno de TikTok sean la misma persona.
-El apodo web tampoco verifica un donante ni acredita su perfil de TikTok.
-
-Retención: identidades inactivas 30 días; preguntas 24 h, hasta 200 pendientes y
-2000 registros históricos; encuestas hasta 100 y 24 h tras cierre; 50.000 votos
-por encuesta; marcas hasta 500/7 días. Regalos deduplicados hasta 50.000/30 días;
-donantes y perfiles web se retiran tras 30 días de inactividad. El top global es
-acumulado para esos perfiles conservados, no un ranking móvil exacto de 30 días.
-
-## TikTok directo en el VPS (opcional)
-
-Por defecto el PC es la fuente de eventos. Para usar la recepción independiente:
-
-```bash
-sudo /opt/gerstep-interactive/.venv/bin/pip install -r /opt/gerstep-interactive/vps/backend/requirements-collector.txt
-```
-
-Configura `GERSTEP_COLLECT_TIKTOK=1` y `GERSTEP_TIKTOK_USERNAME` en el archivo
-privado y reinicia **solo** el servicio de Gerstep. El receptor reutiliza el
-adaptador existente, no genera audio y se suspende cuando conecta el PC.
-Su acceso real a TikTok depende del servicio, del LIVE y de la red del VPS;
-no se ha probado una conexión real en este entorno.
-
-El top de niveles sincroniza cada 30 s los perfiles existentes del PC. El receptor
-opcional conserva sus propios perfiles cuando el PC no está conectado. La web
-mantiene el mayor progreso recibido por ID; no suma dos historiales que podrían
-solaparse. Fusionar exactamente la experiencia ganada en dos bases durante
-desconexiones queda pendiente. Los tops de regalos deduplican los eventos recibidos,
-pero no recuperan donaciones previas a la instalación ni eventos perdidos sin fuente
-conectada. Cada conexión manual del PC inicia una sesión de stream distinta; las
-reconexiones automáticas conservan la misma sesión.
-
-## HTTPS con una IP
-
-El instalador reutiliza tu bloque HTTPS y su certificado. El puente mantiene la
-validación TLS activada. Un certificado para un dominio diferente no sirve para
-`167.86.106.105`.
-
-Let's Encrypt permite certificados para IP con validez corta; Certbot 5.4+ admite
-`webroot`. Debes disponer de un directorio que tu Nginx sirva por HTTP en el puerto
-80 para los desafíos ACME. Prueba primero con `--staging`, cuyo certificado no es
-de confianza; después solicita el certificado de producción sin ese argumento.
-No uses `standalone` para detener el Nginx que sirve las otras aplicaciones.
-[Instrucciones oficiales de Certbot y certificados IP](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
-
-```bash
-sudo certbot certonly --preferred-profile shortlived --webroot \
-  --webroot-path /RUTA_WEBROOT_EXISTENTE --ip-address 167.86.106.105
-```
-
-Selecciona las rutas del certificado emitido en tu bloque HTTPS y configura la
-renovación automática con recarga de Nginx tras una renovación correcta. Los
-certificados IP descritos por esa guía duran seis días. El instalador de Gerstep
-no sustituye certificados que puedan compartir otras aplicaciones.
-
-## OBS, música y operación
-
-Añade `/Gerstep/overlay` como fuente de navegador en OBS, por ejemplo 1920×1080.
-Solo se muestran preguntas seleccionadas y encuestas activas. El overlay local
-`http://127.0.0.1:8765/overlay` también recibe la pregunta seleccionada.
-Las marcas JSON contienen época UTC y segundos desde la primera conexión de esa
-sesión, que puede diferir del comienzo de una grabación en OBS. No graban ni
-publican clips. OBS ofrece un búfer de repetición con guardado por atajo:
-[guía oficial de OBS](https://obsproject.com/kb/OBS-Studio-Overview).
-
-Las solicitudes musicales aceptan enlaces de YouTube y pasan por moderación.
-Activa música tanto en el panel web como en el PC. La reproducción usa el
-reproductor visible ya existente del PC, con su cola y ducking; el VPS no descarga
-audio, no elude DRM y no retransmite un reproductor oculto. Los permisos del
-contenido y de retransmisión corresponden al catálogo que autorices.
-El foco permanece como API abstracta, sin acciones físicas desde la web.
-
-```bash
-sudo systemctl status gerstep-interactive
-sudo journalctl -u gerstep-interactive --since '10 minutes ago'
-sudo systemctl restart gerstep-interactive
-```
-
-Los logs registran tipos de error, sin cuerpos de mensajes ni credenciales.
-La web conserva su funcionamiento si el PC cae; el bot solo funciona mientras
-Gerstep LIVE esté conectado. Los trabajos de voz anteriores no se reenvían al
-reconectar. Si se pierde el puente, el PC sigue procesando su LIVE.
-
-Para reconstruir React en desarrollo: `cd vps/frontend`, `npm ci`, `npm run build`.
-La evidencia local y las limitaciones se describen en
-`docs/GERSTEP_INTERACTIVE.md`. **El VPS real y el certificado no se han desplegado
-ni comprobado desde este entorno.**
+Pruebas locales verifican HTTP/WebSocket, login, moderación, aislamiento,
+preservación de datos, transacciones y configuraciones Nginx representativas.
+**No se ha ejecutado el instalador en tu VPS ni emitido un certificado real.**
+La configuración concreta de ese servidor se valida al ejecutar el menú.

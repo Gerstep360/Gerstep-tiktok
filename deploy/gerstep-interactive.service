@@ -11,7 +11,7 @@ Group=gerstep-interactive
 WorkingDirectory=/opt/gerstep-interactive
 EnvironmentFile=/etc/gerstep-interactive.env
 Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/gerstep-interactive/.venv/bin/python -m vps.backend.server
+ExecStart=/opt/gerstep-interactive/.venv/bin/python -m backend.server
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15

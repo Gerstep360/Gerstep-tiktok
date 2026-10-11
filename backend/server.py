@@ -45,6 +45,7 @@ class Hub:
         self.tasks = []
         self.actions = {}
         self.latencies = []
+        self.password_workers = asyncio.Semaphore(2)
 
     async def start(self):
         await self.db.start()
@@ -249,7 +250,15 @@ async def viewer_action(request):
 async def login(request):
     rate(request, 'admin-login', limit=5, period=60)
     hub = request.app[HUB]
-    if not hub.security.valid_key((await body(request)).get('token', ''), hub.config.admin_token): raise web.HTTPUnauthorized(text='Clave administrativa incorrecta.')
+    supplied = (await body(request)).get('token', '')
+    if hub.config.admin_password_hash:
+        from .passwords import verify_password
+        if hub.password_workers.locked(): raise web.HTTPTooManyRequests(text='Reintentá en un momento.')
+        async with hub.password_workers:
+            valid = await asyncio.to_thread(verify_password, supplied, hub.config.admin_password_hash)
+    else:
+        valid = hub.security.valid_key(supplied, hub.config.admin_token)
+    if not valid: raise web.HTTPUnauthorized(text='Clave administrativa incorrecta.')
     response = web.json_response({'ok': True})
     response.set_cookie('gerstep_admin', hub.security.issue('admin', lifetime=8*3600), secure=not hub.config.development, httponly=True, samesite='Strict', max_age=8*3600, path=hub.config.prefix)
     return response

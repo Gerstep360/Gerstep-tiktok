@@ -50,7 +50,7 @@ class Domain:
         if re.search(r'(.)\1{14,}', text): raise ValueError('Evitá mensajes repetitivos.')
         if kind == 'command' and text not in COMMANDS: raise ValueError('Comando no permitido.')
         if kind == 'music':
-            from gerstep_live.music.manager import youtube_id
+            from .validation import youtube_id
             if not youtube_id(text): raise ValueError('Usá un enlace https válido de YouTube.')
         now = time.time()
         self.maintain(db)
@@ -190,7 +190,7 @@ class Domain:
                     if not stable.isdecimal() or int(stable) <= 0: continue
                     if any(type(row.get(key)) is not int or not 0 <= row[key] <= 10**12 for key in ('xp', 'level')): continue
                     owner = self.security.digest('tiktok:' + stable)
-                    db.execute('INSERT INTO chat_profiles VALUES (?,?,?,?,?,?) ON CONFLICT(owner) DO UPDATE SET nickname=excluded.nickname,xp=MAX(xp,excluded.xp),level=CASE WHEN excluded.xp>=xp THEN excluded.level ELSE level END,rank=CASE WHEN excluded.xp>=xp THEN excluded.rank ELSE rank END,seen=excluded.seen',
+                    db.execute('INSERT INTO chat_profiles(owner,nickname,xp,level,rank,seen) VALUES (?,?,?,?,?,?) ON CONFLICT(owner) DO UPDATE SET nickname=excluded.nickname,xp=MAX(xp,excluded.xp),level=CASE WHEN excluded.xp>=xp THEN excluded.level ELSE level END,rank=CASE WHEN excluded.xp>=xp THEN excluded.rank ELSE rank END,seen=excluded.seen',
                                (owner, str(row.get('nickname', 'Espectador'))[:80], row['xp'], row['level'], str(row.get('rank', ''))[:80], time.time()))
             elif kind in {'comment', 'gift'}:
                 metadata = event.get('metadata', {})
@@ -201,6 +201,9 @@ class Domain:
                     self.chat.append({'nickname': nick, 'text': text[:350], 'created': time.time()})
                     owner = self.security.digest('tiktok:' + stable)
                     if stable.isdecimal() and int(stable) > 0:
+                        if event.get('_collector_profile') is True:
+                            from .profiles import award
+                            award(db, owner, nick, 'comment')
                         match = re.fullmatch(r'/encuesta\s+([1-6])', text.strip(), re.I)
                         try:
                             if match and self.security.allow(('chat-vote', owner), period=3): self.vote(db, owner, int(match[1]),nickname=nick)
@@ -214,6 +217,9 @@ class Domain:
                     if not mid or type(coins) is not int or not 0 < coins <= 1000000: continue
                     if not db.execute('INSERT OR IGNORE INTO gifts VALUES (?,?)', (self.security.digest(mid), time.time())).rowcount: continue
                     owner = self.security.digest('tiktok:' + stable)
+                    if event.get('_collector_profile') is True:
+                        from .profiles import award
+                        award(db, owner, nick, 'gift', coins)
                     db.execute('INSERT INTO donors VALUES (?,?,?,?) ON CONFLICT(owner) DO UPDATE SET coins=coins+excluded.coins,nickname=excluded.nickname,seen=excluded.seen', (owner, nick, coins, time.time()))
                     db.execute('INSERT INTO stream_donors VALUES (?,?,?,?) ON CONFLICT(owner,stream) DO UPDATE SET coins=coins+excluded.coins,seen=excluded.seen', (owner, self.live['stream_id'], coins, time.time()))
         return {'ok': True}
@@ -230,6 +236,7 @@ class Domain:
         db.execute('DELETE FROM blocks WHERE expires<?', (now,))
         db.execute('DELETE FROM identities WHERE seen<?', (now - 30 * 86400,))
         db.execute('DELETE FROM chat_profiles WHERE seen<?', (now - 30 * 86400,))
+        db.execute('DELETE FROM collector_activity WHERE seen<?', (now - 30 * 86400,))
         db.execute('DELETE FROM markers WHERE created<?', (now - 7 * 86400,))
         db.execute('DELETE FROM markers WHERE id IN (SELECT id FROM markers ORDER BY created DESC LIMIT -1 OFFSET 500)')
         db.execute('DELETE FROM donors WHERE seen<?', (now - 30 * 86400,))

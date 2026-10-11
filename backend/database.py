@@ -41,6 +41,7 @@ class Database:
             CREATE INDEX IF NOT EXISTS donor_coins ON donors(coins DESC);
             CREATE INDEX IF NOT EXISTS stream_coins ON stream_donors(stream,coins DESC);
             CREATE INDEX IF NOT EXISTS chat_xp ON chat_profiles(xp DESC);
+            CREATE TABLE IF NOT EXISTS collector_activity(owner TEXT PRIMARY KEY,last_comment REAL,seen REAL);
         ''')
         for table in ('votes', 'supports', 'requests'):
             if 'ip' not in {row[1] for row in self.connection.execute(f'PRAGMA table_info({table})')}:
