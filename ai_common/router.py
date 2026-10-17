@@ -27,7 +27,10 @@ TASKS = {
     'conversation':'Respondé la pregunta actual con contenido útil; distinguí datos reales del remate. No inventes cifras.',
     'explanation':'Explicá la duda actual con precisión y un ejemplo breve; no inventes datos para hacer un chiste.',
     'joke':'Creá ahora una broma ORIGINAL con situación concreta y remate. Sin tema, elegí uno cotidiano. No interpretes el comando como una aclaración de que algo anterior era broma, Si aparece un @nombre hazlo para esa persona, si no pone hazlo con el usuario que envió el comando..',
-    'story':'Contá ahora un CHISME, con planteamiento, giro y remate. Sin tema, inventá una situación absurda.. Si aparece un @nombre hazlo para esa persona, si no pone hazlo con el usuario que envió el comando.',
+    'story':('Contá ahora una HISTORIA FICTICIA, con planteamiento, giro y remate. '
+             'Sin tema, inventá una situación absurda. Si aparece un @nombre, usalo como personaje de ficción; '
+             'si no hay destinatario, el protagonista es el usuario que envió el comando. '
+             'No presentes sucesos inventados como hechos reales sobre esas personas.'),
     'idle':'Introducí una pregunta o intervención nueva y breve para el público. No repitas lo recién dicho ni finjas ver un juego.',
     'confession':'Respondé a la confesión con una conclusión breve, concreta y muy sincera. No repitas la confesión: el programa la leerá completa antes de tu conclusión. Si es seria, evitá burlarte, solamente hacer chistes de alivio pero muy shitpost. No inventes hechos.',
 }
@@ -128,7 +131,8 @@ def task_for(job):
     }
     task=specific.get(name,task)
     if name in {'chisme', 'chismes'}:
-        task=('Contá ahora un CHISME corto SOBRE el usuario mencionado. '
+        task=('Contá ahora un CHISME FICTICIO corto SOBRE el usuario mencionado como NPC ficticio. '
+              'Si no se mencionó a nadie, usá al solicitante del contrato como protagonista de esa ficción. '
               'Usá su nombre dentro de la acción, no solo en el saludo. Una situación cotidiana, una consecuencia '
               'y un remate específico; no un cuento de bar con personajes ajenos. Si hay tema, mantenelo. '
               'Sin tema, inventá una falta absurda e inocua del personaje. No hagas acusaciones reales ni inventes '

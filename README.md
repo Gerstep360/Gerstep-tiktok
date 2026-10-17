@@ -157,9 +157,32 @@ por minuto; ese valor no representa una cuota garantizada por NVIDIA.
 Entrá por `/Gerstep/login` y abrí la pestaña **IA** del administrador. Su chat
 usa `GET`/`POST /Gerstep/api/admin/ai`, exige autenticación administrativa y no
 está disponible para visitantes, sesiones de espectadores ni la clave del puente.
-Los comandos locales no consumen NVIDIA. El chat de pruebas no activa sonidos
-automáticamente. `ai_common` contiene cliente, cuotas, enrutamiento y contexto
-compartidos, sin depender de TikTok, Tkinter, TTS ni módulos del escritorio.
+Los comandos locales no consumen NVIDIA. Por defecto la prueba sólo muestra texto.
+La casilla **Enviar voz y sonidos autorizados al programa** permite al administrador
+enviar esa respuesta al PC conectado por el WebSocket existente, incluso sin
+TikTok. Requiere el PC disponible, las interacciones habilitadas y ninguna parada
+total. La respuesta inicial encolada no confirma que ya se haya escuchado: el PC
+confirma selección, reproducción o error. Las entregas caducan y no se conservan
+para otra sesión.
+
+`ai_common` contiene cliente, cuotas, enrutamiento y contexto compartidos, sin
+depender de TikTok, Tkinter, TTS ni módulos del escritorio. Carga la **skill Gerstep
+V2 completa** y referencias originales seleccionadas por intención; no carga el
+prompt mini ni exportaciones de conversaciones privadas. Los recursos ya están
+incluidos en este repositorio independiente. El contexto inicial es de 16.000
+tokens y el presupuesto operativo de 60.000 tokens/minuto. Las pruebas recientes
+consumieron aproximadamente 8.600–9.700 tokens reales de entrada por solicitud:
+la personalidad completa tiene un coste mayor y el presupuesto de tokens puede
+agotarse antes que las seis solicitudes/minuto. No son cuotas garantizadas del
+proveedor. Las variables `GERSTEP_AI_*` pueden ajustarse en el entorno privado;
+los cambios requieren reiniciar Gerstep.
+
+En turnos de voz elegibles, NVIDIA puede proponer una herramienta nativa
+`queue_sound` dentro de la misma generación. Sólo admite IDs del catálogo fijo.
+El backend valida la propuesta y el PC conserva autorización final por intención,
+cooldown y estado. La IA no recibe claves del puente, no elige endpoints ni ejecuta
+texto arbitrario. Puede no proponer ningún sonido; no se hace una segunda llamada
+de IA únicamente para seleccionar el efecto.
 
 Los efectos autorizados se transportan por dos endpoints privados:
 
@@ -175,6 +198,19 @@ opcional. El PC coordina el sonido con la voz de ese turno. Hay deduplicación,
 cooldown compartido, cola limitada y cinco segundos de vigencia de transporte.
 Si el PC está desconectado, en emergencia o sin efectos habilitados, se rechaza
 la acción: no se almacena para reproducirla en otra sesión.
+
+El envío administrativo de voz usa el mismo `POST /Gerstep/api/admin/ai` con
+`send_to_live=true`. Después de la generación validada entrega `ai_response` por
+el WebSocket, con diez segundos de vigencia para entrar al pipeline del PC. El
+programa reutiliza su TTS y cola secuencial: primero voz, después efecto permitido,
+después siguiente voz. El VPS no instala ni reproduce sonidos. La prueba privada
+sin esa opción no activa reproducción.
+
+Se verificaron herramientas nativas con NVIDIA y transporte HTTP/WebSocket local
+con servicios de audio simulados. La prueba nativa forzó `queue_sound` sólo para
+verificar el protocolo; producción usa selección automática opcional. Esto no
+certifica audio acústico ni conexión con tu VPS de producción. La instalación
+real requiere ejecutar el menú en tu servidor y actualizar también el PC.
 
 ## TikTok opcional
 
